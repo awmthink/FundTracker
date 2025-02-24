@@ -2,10 +2,24 @@
   <div class="fund-transactions">
     <div class="header">
       <h2>交易记录</h2>
+      <div class="quick-filters">
+        <el-radio-group v-model="quickDateRange" @change="handleQuickDateChange">
+          <el-radio-button label="1">最近1个月</el-radio-button>
+          <el-radio-button label="3">最近3个月</el-radio-button>
+          <el-radio-button label="6">最近6个月</el-radio-button>
+          <el-radio-button label="12">最近1年</el-radio-button>
+          <el-radio-button label="custom">自定义</el-radio-button>
+        </el-radio-group>
+      </div>
     </div>
 
     <!-- 搜索表单 -->
-    <el-form :inline="true" :model="filters" class="search-form">
+    <el-form 
+      v-show="quickDateRange === 'custom'" 
+      :inline="true" 
+      :model="filters" 
+      class="search-form"
+    >
       <el-form-item label="基金代码">
         <el-input v-model="filters.fund_code" placeholder="请输入基金代码" />
       </el-form-item>
@@ -169,7 +183,8 @@ export default {
         amount: 0,
         nav: 0,
         transaction_date: ''
-      }
+      },
+      quickDateRange: '1', // Default to 1 month
     }
   },
   methods: {
@@ -203,7 +218,8 @@ export default {
         end_date: ''
       }
       this.dateRange = []
-      this.loadTransactions()
+      this.quickDateRange = '1'
+      this.handleQuickDateChange('1') // Reset to last month and load data
     },
     
     handleEdit(transaction) {
@@ -265,10 +281,29 @@ export default {
     formatNumber(num, decimals = 2) {
       if (num === null || num === undefined) return '--'
       return Number(num).toFixed(decimals)
-    }
+    },
+    handleQuickDateChange(value) {
+      if (value === 'custom') {
+        // If custom is selected, don't modify the date range
+        return;
+      }
+      
+      const months = parseInt(value);
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setMonth(endDate.getMonth() - months);
+      
+      this.dateRange = [
+        startDate.toISOString().split('T')[0],
+        endDate.toISOString().split('T')[0]
+      ];
+      
+      this.loadTransactions();
+    },
   },
   mounted() {
-    this.loadTransactions()
+    // When component mounts, show last month's transactions by default
+    this.handleQuickDateChange('1');
   }
 }
 </script>
@@ -283,6 +318,9 @@ export default {
 }
 
 .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
 }
 
@@ -290,8 +328,14 @@ export default {
   margin: 0;
 }
 
+.quick-filters {
+  margin-bottom: 20px;
+}
+
 .search-form {
   margin-bottom: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
 }
 
 .dialog-footer {
