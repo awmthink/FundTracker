@@ -232,76 +232,107 @@ class FundService:
         try:
             # 获取前一个工作日的日期
             yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-            
-            # 如果是周一，获取上周五的数据
-            if datetime.now().weekday() == 0:  # 0 表示周一
+            if datetime.now().weekday() == 0:
                 yesterday = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
-            # 如果是周日，获取周五的数据
-            elif datetime.now().weekday() == 6:  # 6 表示周日
+            elif datetime.now().weekday() == 6:
                 yesterday = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-            
-            print(f"获取 {yesterday} 的净值数据")  # 添加日志
-            
+
+            # 首先获取所有基金的交易记录，按日期排序
             cursor.execute('''
-                WITH fund_summary AS (
-                    SELECT 
-                        f.fund_id,
-                        f.fund_code,
-                        f.fund_name,
-                        f.current_nav,
-                        SUM(CASE 
-                            WHEN t.transaction_type = 'buy' THEN t.shares 
-                            WHEN t.transaction_type = 'sell' THEN -t.shares 
-                            ELSE 0 
-                        END) as total_shares,
-                        SUM(CASE 
-                            WHEN t.transaction_type = 'buy' THEN t.amount + t.fee
-                            WHEN t.transaction_type = 'sell' THEN -(t.amount + t.fee)
-                            ELSE 0 
-                        END) as total_cost
-                    FROM funds f
-                    LEFT JOIN fund_transactions t ON f.fund_id = t.fund_id
-                    GROUP BY f.fund_id, f.fund_code, f.fund_name, f.current_nav
-                    HAVING total_shares > 0
-                )
                 SELECT 
-                    fund_code,
-                    fund_name,
-                    current_nav,
-                    total_shares,
-                    total_cost as cost_amount
-                FROM fund_summary
-                ORDER BY total_cost DESC
+                    f.fund_code,
+                    f.fund_name,
+                    f.current_nav,
+                    t.transaction_type,
+                    t.shares,
+                    t.amount,
+                    t.fee,
+                    t.transaction_date,
+                    t.nav as transaction_nav
+                FROM funds f
+                JOIN fund_transactions t ON f.fund_id = t.fund_id
+                ORDER BY f.fund_code, t.transaction_date ASC
             ''')
             
-            holdings = cursor.fetchall()
+            transactions = cursor.fetchall()
             
-            # 转换为字典列表并获取最新净值
+            # 按基金代码分组处理交易
+            holdings = {}
+            for row in transactions:
+                fund_code = row[0]
+                if fund_code not in holdings:
+                    holdings[fund_code] = {
+                        'fund_code': fund_code,
+                        'fund_name': row[1],
+                        'current_nav': row[2],
+                        'total_shares': 0,
+                        'total_cost': 0,
+                        'realized_profit': 0,  # 已实现收益
+                        'total_investment': 0  # 总投入
+                    }
+                
+                fund = holdings[fund_code]
+                transaction_type = row[3]
+                shares = float(row[4])
+                amount = float(row[5])
+                fee = float(row[6])
+                
+                if transaction_type == 'buy':
+                    # 买入时更新总份额和总成本
+                    fund['total_shares'] += shares
+                    fund['total_cost'] += (amount + fee)
+                    fund['total_investment'] += (amount + fee)
+                    
+                elif transaction_type == 'sell':
+                    # 卖出时，使用当前平均成本计算已实现收益
+                    if fund['total_shares'] > 0:
+                        avg_cost_per_share = fund['total_cost'] / fund['total_shares']
+                        sell_cost = shares * avg_cost_per_share
+                        sell_amount = amount - fee
+                        
+                        # 计算已实现收益
+                        realized_profit = sell_amount - sell_cost
+                        fund['realized_profit'] += realized_profit
+                        
+                        # 更新总份额和总成本
+                        fund['total_shares'] -= shares
+                        if fund['total_shares'] > 0:
+                            fund['total_cost'] = avg_cost_per_share * fund['total_shares']
+                        else:
+                            fund['total_cost'] = 0
+
+            # 计算最终持仓信息
             result = []
-            for row in holdings:
-                # 获取昨日净值
-                yesterday_nav = self.get_historical_nav(row[0], yesterday)
-                nav = yesterday_nav if yesterday_nav is not None else row[2]
-                
-                print(f"基金 {row[0]} 的净值: {nav}")  # 添加日志
-                
-                total_shares = float(row[3]) if row[3] is not None else 0
-                cost_amount = float(row[4]) if row[4] is not None else 0
-                market_value = total_shares * float(nav)
-                profit_loss = market_value - cost_amount
-                profit_rate = profit_loss / cost_amount if cost_amount > 0 else 0
-                
-                holding = {
-                    'fund_code': row[0],
-                    'fund_name': row[1],
-                    'current_nav': float(nav),
-                    'total_shares': total_shares,
-                    'cost_amount': cost_amount,
-                    'market_value': market_value,
-                    'profit_loss': profit_loss,
-                    'profit_rate': profit_rate
-                }
-                result.append(holding)
+            for fund_code, fund in holdings.items():
+                if fund['total_shares'] > 0:  # 只显示有持仓的基金
+                    # 获取最新净值
+                    current_nav = self.get_historical_nav(fund_code, yesterday) or fund['current_nav']
+                    
+                    # 计算当前持仓成本
+                    current_cost = fund['total_cost']
+                    
+                    # 计算当前市值
+                    market_value = fund['total_shares'] * float(current_nav)
+                    
+                    # 计算持有收益和收益率
+                    holding_profit = market_value - current_cost
+                    holding_profit_rate = holding_profit / current_cost if current_cost > 0 else 0
+                    
+                    # 计算累计收益（包括已实现和未实现）
+                    total_profit = holding_profit + fund['realized_profit']
+                    
+                    result.append({
+                        'fund_code': fund_code,
+                        'fund_name': fund['fund_name'],
+                        'current_nav': float(current_nav),
+                        'total_shares': fund['total_shares'],
+                        'cost_amount': current_cost,
+                        'market_value': market_value,
+                        'holding_profit': holding_profit,
+                        'holding_profit_rate': holding_profit_rate,
+                        'total_profit': total_profit,
+                        'avg_cost_nav': current_cost / fund['total_shares'] if fund['total_shares'] > 0 else 0
+                    })
             
             return result
             
@@ -416,7 +447,7 @@ class FundService:
             conn.close()
 
     def calculate_sell_fee(self, fund_code, amount, transaction_date):
-        """计算赎回费用"""
+        """计算赎回费用，按FIFO原则分别计算每笔买入对应的赎回费用"""
         conn = self.get_db_connection()
         cursor = conn.cursor()
         
@@ -432,33 +463,72 @@ class FundService:
             if not fee_settings:
                 raise Exception('未找到基金费率设置')
             
-            # 获取最早的买入日期
+            # 获取基金ID
+            cursor.execute('SELECT fund_id FROM funds WHERE fund_code = ?', (fund_code,))
+            fund_id = cursor.fetchone()[0]
+            
+            # 获取所有未售出的买入记录（按日期排序）
             cursor.execute('''
-                SELECT MIN(transaction_date)
-                FROM fund_transactions ft
-                JOIN funds f ON ft.fund_id = f.fund_id
-                WHERE f.fund_code = ?
-                AND ft.transaction_type = 'buy'
-            ''', (fund_code,))
+                SELECT 
+                    t.transaction_date,
+                    t.shares as original_shares,
+                    COALESCE(
+                        (SELECT SUM(st.shares) 
+                         FROM fund_transactions st 
+                         WHERE st.transaction_type = 'sell'
+                         AND st.reference_buy_id = t.transaction_id), 
+                        0
+                    ) as sold_shares,
+                    t.nav as buy_nav
+                FROM fund_transactions t
+                WHERE t.fund_id = ?
+                AND t.transaction_type = 'buy'
+                ORDER BY t.transaction_date ASC
+            ''', (fund_id,))
             
-            earliest_buy_date = cursor.fetchone()[0]
-            if not earliest_buy_date:
-                raise Exception('未找到买入记录')
+            buy_records = cursor.fetchall()
             
-            # 计算持有天数
-            earliest_buy_date = datetime.strptime(earliest_buy_date, '%Y-%m-%d')
-            current_date = datetime.strptime(transaction_date, '%Y-%m-%d')
-            hold_days = (current_date - earliest_buy_date).days
+            # 计算需要卖出的份额
+            shares_to_sell = amount / float(data['nav'])
+            total_fee = 0
+            remaining_to_sell = shares_to_sell
             
-            # 根据持有期确定费率
-            if hold_days < 7:
-                fee_rate = fee_settings[0]  # sell_fee_lt7
-            elif hold_days < 365:
-                fee_rate = fee_settings[1]  # sell_fee_lt365
-            else:
-                fee_rate = fee_settings[2]  # sell_fee_gt365
+            sell_date = datetime.strptime(transaction_date, '%Y-%m-%d')
             
-            return amount * fee_rate
+            for record in buy_records:
+                buy_date = datetime.strptime(record['transaction_date'], '%Y-%m-%d')
+                available_shares = record['original_shares'] - record['sold_shares']
+                
+                if available_shares <= 0:
+                    continue
+                    
+                # 计算这笔买入记录可以卖出的份额
+                shares_from_this_buy = min(remaining_to_sell, available_shares)
+                if shares_from_this_buy <= 0:
+                    break
+                    
+                # 计算持有天数
+                hold_days = (sell_date - buy_date).days
+                
+                # 确定费率
+                if hold_days < 7:
+                    fee_rate = fee_settings['sell_fee_lt7']
+                elif hold_days < 365:
+                    fee_rate = fee_settings['sell_fee_lt365']
+                else:
+                    fee_rate = fee_settings['sell_fee_gt365']
+                
+                # 计算这部分份额对应的金额和费用
+                amount_for_this_portion = shares_from_this_buy * float(data['nav'])
+                fee_for_this_portion = amount_for_this_portion * fee_rate
+                
+                total_fee += fee_for_this_portion
+                remaining_to_sell -= shares_from_this_buy
+                
+                if remaining_to_sell <= 0:
+                    break
+            
+            return total_fee
             
         finally:
             conn.close()

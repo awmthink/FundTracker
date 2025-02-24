@@ -16,61 +16,75 @@
       </div>
     </div>
 
-    <div class="table-container">
-      <el-table 
-        :data="holdings" 
-        border 
-        style="width: 100%"
-        v-loading="loading"
-        element-loading-text="正在加载持仓信息..."
-      >
-        <el-table-column prop="fund_code" label="基金代码" width="100" />
-        <el-table-column prop="fund_name" label="基金名称" width="220" />
-        <el-table-column label="持仓份额" width="120">
-          <template #default="scope">
-            {{ formatNumber(scope.row.total_shares) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="最新净值" width="100">
-          <template #default="scope">
-            {{ formatNumber(scope.row.current_nav, 4) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="持仓成本" width="120">
-          <template #default="scope">
-            {{ formatNumber(scope.row.cost_amount) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="持仓市值" width="120">
-          <template #default="scope">
-            {{ formatNumber(scope.row.market_value) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="浮动盈亏" width="120">
-          <template #default="scope">
-            {{ formatNumber(scope.row.profit_loss) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="收益率" width="100">
-          <template #default="scope">
-            <span :class="{'profit': scope.row.profit_rate > 0, 'loss': scope.row.profit_rate < 0}">
-              {{ formatNumber(scope.row.profit_rate * 100) }}%
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120">
-          <template #default="scope">
-            <el-button
-              size="small"
-              type="primary"
-              :loading="scope.row.updating"
-              @click="updateSingleNav(scope.row)"
-            >
-              更新净值
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <div class="holdings-grid">
+      <el-card v-for="holding in holdings" :key="holding.fund_code" class="holding-card">
+        <div class="holding-header">
+          <div class="fund-info">
+            <div class="fund-code">{{ holding.fund_code }}</div>
+            <div class="fund-name">{{ holding.fund_name }}</div>
+          </div>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="holding.updating"
+            @click="updateSingleNav(holding)"
+          >
+            更新净值
+          </el-button>
+        </div>
+
+        <div class="holding-details">
+          <div class="detail-row">
+            <div class="detail-item">
+              <div class="label">持有份额</div>
+              <div class="value">{{ formatNumber(holding.total_shares) }}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">最新净值</div>
+              <div class="value">{{ formatNumber(holding.current_nav, 4) }}</div>
+            </div>
+          </div>
+
+          <div class="detail-row">
+            <div class="detail-item">
+              <div class="label">平均持仓净值</div>
+              <div class="value">{{ formatNumber(holding.avg_cost_nav, 4) }}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">持仓成本</div>
+              <div class="value">{{ formatNumber(holding.cost_amount) }}</div>
+            </div>
+          </div>
+
+          <div class="detail-row">
+            <div class="detail-item">
+              <div class="label">持仓市值</div>
+              <div class="value">{{ formatNumber(holding.market_value) }}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">持有收益</div>
+              <div class="value" :class="getProfitClass(holding.holding_profit)">
+                {{ formatNumber(holding.holding_profit) }}
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-row">
+            <div class="detail-item">
+              <div class="label">持有收益率</div>
+              <div class="value" :class="getProfitClass(holding.holding_profit_rate)">
+                {{ formatNumber(holding.holding_profit_rate * 100) }}%
+              </div>
+            </div>
+            <div class="detail-item">
+              <div class="label">累计收益</div>
+              <div class="value" :class="getProfitClass(holding.total_profit)">
+                {{ formatNumber(holding.total_profit) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-card>
     </div>
   </div>
 </template>
@@ -151,6 +165,13 @@ export default {
       if (!datetime) return ''
       const date = new Date(datetime)
       return date.toLocaleString()
+    },
+
+    getProfitClass(value) {
+      return {
+        'profit': value > 0,
+        'loss': value < 0
+      }
     }
   },
   mounted() {
@@ -161,10 +182,8 @@ export default {
 
 <style scoped>
 .fund-holdings {
-  background: #fff;
+  background: transparent;
   padding: 20px;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
 }
 
 .header {
@@ -176,6 +195,7 @@ export default {
 
 .header h2 {
   margin: 0;
+  color: #303133;
 }
 
 .actions {
@@ -189,6 +209,73 @@ export default {
   font-size: 14px;
 }
 
+.holdings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.holding-card {
+  transition: all 0.3s;
+}
+
+.holding-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.holding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.fund-info {
+  flex: 1;
+}
+
+.fund-code {
+  font-size: 16px;
+  font-weight: bold;
+  color: #303133;
+}
+
+.fund-name {
+  font-size: 14px;
+  color: #606266;
+  margin-top: 4px;
+}
+
+.holding-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  color: #909399;
+}
+
+.value {
+  font-size: 15px;
+  color: #303133;
+  font-weight: 500;
+}
+
 .profit {
   color: #67C23A;
 }
@@ -197,17 +284,15 @@ export default {
   color: #F56C6C;
 }
 
-/* 表格内按钮样式优化 */
-.el-table .el-button {
-  padding: 6px 12px;
-}
-
-/* 确保按钮之间有合适的间距 */
-.el-button + .el-button {
-  margin-left: 8px;
-}
-
-:deep(.el-table) {
-  margin-top: 20px;
+@media (max-width: 768px) {
+  .holdings-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
 }
 </style>

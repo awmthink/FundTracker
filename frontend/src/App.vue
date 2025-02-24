@@ -1,7 +1,7 @@
 <template>
   <el-container class="app-container">
     <el-header>
-      <h1>个人基金管理</h1>
+      <h1>FundTracker</h1>
     </el-header>
     <el-main>
       <el-row :gutter="20">
