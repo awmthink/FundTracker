@@ -1,6 +1,6 @@
 import sqlite3
 from flask import jsonify
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 import re
 import json
@@ -8,6 +8,7 @@ import json
 class FundService:
     def __init__(self):
         self.db_name = 'finance.db'
+        self.fund_api_url = "http://fundgz.1234567.com.cn/js"
 
     def get_db_connection(self):
         conn = sqlite3.connect(self.db_name)
@@ -15,43 +16,45 @@ class FundService:
         return conn
 
     def add_transaction(self, data):
-        # 数据验证
-        required_fields = ['fund_code', 'fund_name', 'transaction_type', 
-                          'amount', 'nav', 'fee', 'transaction_date']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    'status': 'error',
-                    'message': f'缺少必要字段: {field}'
-                })
-        
-        # 验证数值字段
-        try:
-            amount = float(data['amount'])
-            nav = float(data['nav'])
-            fee = float(data['fee'])
-            if amount <= 0 or nav <= 0:
-                return jsonify({
-                    'status': 'error',
-                    'message': '金额和净值必须大于0'
-                })
-        except ValueError:
-            return jsonify({
-                'status': 'error',
-                'message': '金额、净值或手续费格式不正确'
-            })
-        
-        # 验证交易类型
-        if data['transaction_type'] not in ['buy', 'sell']:
-            return jsonify({
-                'status': 'error',
-                'message': '交易类型必须是 buy 或 sell'
-            })
-
+        """添加交易记录"""
         conn = self.get_db_connection()
         cursor = conn.cursor()
         
         try:
+            # 数据验证
+            required_fields = ['fund_code', 'fund_name', 'transaction_type', 
+                             'amount', 'nav', 'transaction_date']
+            for field in required_fields:
+                if field not in data:
+                    return {
+                        'status': 'error',
+                        'message': f'缺少必需字段: {field}'
+                    }
+            
+            # 如果是卖出交易，验证是否有足够的份额
+            if data['transaction_type'] == 'sell':
+                cursor.execute('''
+                    SELECT COALESCE(
+                        SUM(CASE 
+                            WHEN transaction_type = 'buy' THEN shares 
+                            WHEN transaction_type = 'sell' THEN -shares 
+                            ELSE 0 
+                        END), 0) as available_shares
+                    FROM fund_transactions ft
+                    JOIN funds f ON ft.fund_id = f.fund_id
+                    WHERE f.fund_code = ?
+                    AND transaction_date <= ?
+                ''', (data['fund_code'], data['transaction_date']))
+                
+                available_shares = cursor.fetchone()[0]
+                sell_shares = float(data['amount']) / float(data['nav'])
+                
+                if sell_shares > available_shares:
+                    return {
+                        'status': 'error',
+                        'message': f'可用份额不足。当前可用: {available_shares:.2f}, 尝试卖出: {sell_shares:.2f}'
+                    }
+            
             # 检查基金是否存在，不存在则添加
             cursor.execute('''
                 INSERT OR IGNORE INTO funds (fund_code, fund_name, current_nav)
@@ -71,13 +74,12 @@ class FundService:
                     data['transaction_date']
                 )
             else:
-                # 买入手续费计算保持不变
                 fund_settings = self.get_fund_fees(data['fund_code'])
                 if not fund_settings:
-                    return jsonify({
+                    return {
                         'status': 'error',
                         'message': '未找到基金费率设置'
-                    })
+                    }
                 fee = float(data['amount']) * fund_settings['buy_fee']
             
             # 计算份额
@@ -88,82 +90,177 @@ class FundService:
                 INSERT INTO fund_transactions 
                 (fund_id, transaction_type, amount, nav, fee, transaction_date, shares)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (fund_id, data['transaction_type'], amount, nav,
+            ''', (fund_id, data['transaction_type'], data['amount'], data['nav'],
                   fee, data['transaction_date'], shares))
             
+            # 更新基金当前净值
+            cursor.execute('''
+                UPDATE funds 
+                SET current_nav = ?, last_update_time = CURRENT_TIMESTAMP
+                WHERE fund_id = ?
+            ''', (data['nav'], fund_id))
+            
             conn.commit()
-            return jsonify({'status': 'success'})
+            return {
+                'status': 'success',
+                'message': '交易添加成功'
+            }
         except Exception as e:
             conn.rollback()
-            return jsonify({
+            print(f"添加交易失败: {str(e)}")  # 添加错误日志
+            return {
                 'status': 'error',
-                'message': f'数据库错误: {str(e)}'
-            })
+                'message': f'添加交易失败: {str(e)}'
+            }
         finally:
             conn.close()
 
-    def get_holdings(self):
-        """获取基金持仓信息"""
+    def get_historical_nav(self, fund_code, date):
+        """从天天基金获取历史净值"""
         try:
-            conn = self.get_db_connection()
-            cursor = conn.cursor()
+            # 使用天天基金的历史净值接口
+            url = f"http://fund.eastmoney.com/f10/F10DataApi.aspx"
+            params = {
+                'type': 'lsjz',  # 历史净值
+                'code': fund_code,
+                'page': 1,
+                'per': 1,  # 只获取一条记录
+                'sdate': date,
+                'edate': date
+            }
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
             
-            # 查询持仓信息，包括成本、份额、当前净值等
-            cursor.execute('''
-                SELECT 
-                    f.fund_code,
-                    f.fund_name,
-                    f.current_nav,
-                    f.last_update_time,
-                    SUM(CASE 
-                        WHEN t.transaction_type = 'buy' THEN t.shares 
-                        WHEN t.transaction_type = 'sell' THEN -t.shares 
-                        ELSE 0 
-                    END) as total_shares,
-                    SUM(CASE 
-                        WHEN t.transaction_type = 'buy' THEN t.amount 
-                        WHEN t.transaction_type = 'sell' THEN -t.amount 
-                        ELSE 0 
-                    END) as total_cost
-                FROM funds f
-                LEFT JOIN fund_transactions t ON f.fund_id = t.fund_id
-                GROUP BY f.fund_id, f.fund_code, f.fund_name
-                HAVING total_shares > 0
-            ''')
+            response = requests.get(url, params=params, headers=headers)
             
-            holdings = []
-            for row in cursor.fetchall():
-                total_shares = float(row['total_shares'] or 0)
-                total_cost = float(row['total_cost'] or 0)
-                current_nav = float(row['current_nav'] or 0)
-                current_value = total_shares * current_nav
-                
-                # 计算收益
-                profit = current_value - total_cost
-                profit_rate = (profit / total_cost * 100) if total_cost > 0 else 0
-                
-                holdings.append({
-                    'fund_code': row['fund_code'],
-                    'fund_name': row['fund_name'],
-                    'total_shares': total_shares,
-                    'total_cost': total_cost,
-                    'current_nav': current_nav,
-                    'current_value': current_value,
-                    'profit': profit,
-                    'profit_rate': profit_rate,
-                    'last_update_time': row['last_update_time']
-                })
+            if response.status_code != 200:
+                print(f"获取基金{fund_code}净值失败: HTTP {response.status_code}")
+                return None
             
-            return holdings
+            # 返回的是HTML格式的数据，需要解析
+            content = response.text
+            
+            # 使用正则表达式提取数据
+            import re
+            pattern = r'<td>(\d{4}-\d{2}-\d{2})</td><td.*?>(.*?)</td>'
+            matches = re.findall(pattern, content)
+            
+            if matches:
+                for date_str, nav_str in matches:
+                    if date_str == date:  # 确保日期匹配
+                        try:
+                            return float(nav_str)
+                        except ValueError:
+                            print(f"净值转换失败: {nav_str}")
+                            return None
+            
+            # 如果没有找到对应日期的数据，尝试获取最近的净值
+            url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
+            params = {
+                'rt': datetime.now().timestamp()
+            }
+            
+            response = requests.get(url, params=params, headers=headers)
+            if response.status_code == 200:
+                content = response.text
+                # 返回格式类似：jsonpgz({"fundcode":"000001","name":"xxx","jzrq":"2023-11-23","dwjz":"1.0100",...})
+                match = re.search(r'"dwjz":"([\d\.]+)"', content)
+                if match:
+                    return float(match.group(1))
+            
+            return None
             
         except Exception as e:
-            print(f"Error getting holdings: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-            raise
+            print(f"获取基金{fund_code}历史净值失败: {str(e)}")
+            return None
+
+    def get_holdings(self):
+        """获取基金持仓信息"""
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 获取前一个工作日的日期
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            # 如果是周一，获取上周五的数据
+            if datetime.now().weekday() == 0:  # 0 表示周一
+                yesterday = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
+            # 如果是周日，获取周五的数据
+            elif datetime.now().weekday() == 6:  # 6 表示周日
+                yesterday = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+            
+            print(f"获取 {yesterday} 的净值数据")  # 添加日志
+            
+            cursor.execute('''
+                WITH fund_summary AS (
+                    SELECT 
+                        f.fund_id,
+                        f.fund_code,
+                        f.fund_name,
+                        f.current_nav,
+                        SUM(CASE 
+                            WHEN t.transaction_type = 'buy' THEN t.shares 
+                            WHEN t.transaction_type = 'sell' THEN -t.shares 
+                            ELSE 0 
+                        END) as total_shares,
+                        SUM(CASE 
+                            WHEN t.transaction_type = 'buy' THEN t.amount + t.fee
+                            WHEN t.transaction_type = 'sell' THEN -(t.amount + t.fee)
+                            ELSE 0 
+                        END) as total_cost
+                    FROM funds f
+                    LEFT JOIN fund_transactions t ON f.fund_id = t.fund_id
+                    GROUP BY f.fund_id, f.fund_code, f.fund_name, f.current_nav
+                    HAVING total_shares > 0
+                )
+                SELECT 
+                    fund_code,
+                    fund_name,
+                    current_nav,
+                    total_shares,
+                    total_cost as cost_amount
+                FROM fund_summary
+                ORDER BY total_cost DESC
+            ''')
+            
+            holdings = cursor.fetchall()
+            
+            # 转换为字典列表并获取最新净值
+            result = []
+            for row in holdings:
+                # 获取昨日净值
+                yesterday_nav = self.get_historical_nav(row[0], yesterday)
+                nav = yesterday_nav if yesterday_nav is not None else row[2]
+                
+                print(f"基金 {row[0]} 的净值: {nav}")  # 添加日志
+                
+                total_shares = float(row[3]) if row[3] is not None else 0
+                cost_amount = float(row[4]) if row[4] is not None else 0
+                market_value = total_shares * float(nav)
+                profit_loss = market_value - cost_amount
+                profit_rate = profit_loss / cost_amount if cost_amount > 0 else 0
+                
+                holding = {
+                    'fund_code': row[0],
+                    'fund_name': row[1],
+                    'current_nav': float(nav),
+                    'total_shares': total_shares,
+                    'cost_amount': cost_amount,
+                    'market_value': market_value,
+                    'profit_loss': profit_loss,
+                    'profit_rate': profit_rate
+                }
+                result.append(holding)
+            
+            return result
+            
+        except Exception as e:
+            print(f"获取持仓信息失败: {str(e)}")
+            raise e
         finally:
-            if 'conn' in locals():
-                conn.close()
+            conn.close()
 
     def update_nav(self, data):
         conn = self.get_db_connection()
@@ -269,29 +366,12 @@ class FundService:
         finally:
             conn.close()
 
-    def calculate_sell_fee(self, fund_code, sell_amount, transaction_date):
-        """
-        计算赎回费用
-        :param fund_code: 基金代码
-        :param sell_amount: 赎回金额
-        :param transaction_date: 赎回日期
-        :return: 手续费金额
-        """
+    def calculate_sell_fee(self, fund_code, amount, transaction_date):
+        """计算赎回费用"""
         conn = self.get_db_connection()
         cursor = conn.cursor()
         
         try:
-            # 获取基金的所有买入记录，按照购买日期排序
-            cursor.execute('''
-                SELECT t.transaction_date, t.shares, t.nav
-                FROM fund_transactions t
-                JOIN funds f ON t.fund_id = f.fund_id
-                WHERE f.fund_code = ? AND t.transaction_type = 'buy'
-                ORDER BY t.transaction_date ASC
-            ''', (fund_code,))
-            
-            buy_records = cursor.fetchall()
-            
             # 获取基金费率设置
             cursor.execute('''
                 SELECT sell_fee_lt7, sell_fee_lt365, sell_fee_gt365
@@ -301,41 +381,35 @@ class FundService:
             
             fee_settings = cursor.fetchone()
             if not fee_settings:
-                raise ValueError("未找到基金费率设置")
-                
-            sell_fee_lt7, sell_fee_lt365, sell_fee_gt365 = fee_settings
+                raise Exception('未找到基金费率设置')
             
-            # 计算每笔买入记录到赎回日期的持有天数
-            total_fee = 0
-            remaining_amount = sell_amount
-            sell_date = datetime.strptime(transaction_date, '%Y-%m-%d')
+            # 获取最早的买入日期
+            cursor.execute('''
+                SELECT MIN(transaction_date)
+                FROM fund_transactions ft
+                JOIN funds f ON ft.fund_id = f.fund_id
+                WHERE f.fund_code = ?
+                AND ft.transaction_type = 'buy'
+            ''', (fund_code,))
             
-            for buy_record in buy_records:
-                buy_date = datetime.strptime(buy_record[0], '%Y-%m-%d')
-                shares = buy_record[1]
-                nav = buy_record[2]
-                
-                holding_days = (sell_date - buy_date).days
-                current_amount = shares * nav
-                
-                if remaining_amount <= 0:
-                    break
-                    
-                amount_to_sell = min(remaining_amount, current_amount)
-                
-                # 根据持有天数确定费率
-                if holding_days < 7:
-                    fee_rate = sell_fee_lt7
-                elif holding_days < 365:
-                    fee_rate = sell_fee_lt365
-                else:
-                    fee_rate = sell_fee_gt365
-                    
-                fee = amount_to_sell * fee_rate
-                total_fee += fee
-                remaining_amount -= amount_to_sell
-                
-            return total_fee
+            earliest_buy_date = cursor.fetchone()[0]
+            if not earliest_buy_date:
+                raise Exception('未找到买入记录')
+            
+            # 计算持有天数
+            earliest_buy_date = datetime.strptime(earliest_buy_date, '%Y-%m-%d')
+            current_date = datetime.strptime(transaction_date, '%Y-%m-%d')
+            hold_days = (current_date - earliest_buy_date).days
+            
+            # 根据持有期确定费率
+            if hold_days < 7:
+                fee_rate = fee_settings[0]  # sell_fee_lt7
+            elif hold_days < 365:
+                fee_rate = fee_settings[1]  # sell_fee_lt365
+            else:
+                fee_rate = fee_settings[2]  # sell_fee_gt365
+            
+            return amount * fee_rate
             
         finally:
             conn.close()
@@ -471,4 +545,154 @@ class FundService:
             raise
         finally:
             if 'conn' in locals():
-                conn.close() 
+                conn.close()
+
+    def get_transactions(self, filters=None):
+        """获取基金交易记录"""
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            query = '''
+                SELECT 
+                    t.transaction_id,
+                    f.fund_code,
+                    f.fund_name,
+                    t.transaction_type,
+                    t.amount,
+                    t.nav,
+                    t.fee,
+                    t.shares,
+                    t.transaction_date
+                FROM fund_transactions t
+                JOIN funds f ON t.fund_id = f.fund_id
+                WHERE 1=1
+            '''
+            params = []
+            
+            if filters:
+                if filters.get('fund_code'):
+                    query += ' AND f.fund_code LIKE ?'
+                    params.append(f"%{filters['fund_code']}%")
+                if filters.get('fund_name'):
+                    query += ' AND f.fund_name LIKE ?'
+                    params.append(f"%{filters['fund_name']}%")
+                if filters.get('start_date'):
+                    query += ' AND t.transaction_date >= ?'
+                    params.append(filters['start_date'])
+                if filters.get('end_date'):
+                    query += ' AND t.transaction_date <= ?'
+                    params.append(filters['end_date'])
+                if filters.get('transaction_type'):
+                    query += ' AND t.transaction_type = ?'
+                    params.append(filters['transaction_type'])
+            
+            query += ' ORDER BY t.transaction_date DESC'
+            
+            cursor.execute(query, params)
+            transactions = cursor.fetchall()
+            
+            return [{
+                'transaction_id': row['transaction_id'],
+                'fund_code': row['fund_code'],
+                'fund_name': row['fund_name'],
+                'transaction_type': row['transaction_type'],
+                'amount': float(row['amount']),
+                'nav': float(row['nav']),
+                'fee': float(row['fee']),
+                'shares': float(row['shares']),
+                'transaction_date': row['transaction_date']
+            } for row in transactions]
+            
+        finally:
+            conn.close()
+
+    def delete_transaction(self, transaction_id):
+        """删除交易记录"""
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('DELETE FROM fund_transactions WHERE transaction_id = ?', 
+                          (transaction_id,))
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+    def update_transaction(self, transaction_id, data):
+        """更新交易记录"""
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 验证必需字段
+            required_fields = ['fund_code', 'fund_name', 'transaction_type', 
+                             'amount', 'nav', 'transaction_date']
+            for field in required_fields:
+                if field not in data:
+                    raise ValueError(f'缺少必需字段: {field}')
+
+            # 确保数值字段为浮点数
+            amount = float(data['amount'])
+            nav = float(data['nav'])
+            
+            # 验证交易记录是否存在
+            cursor.execute('SELECT * FROM fund_transactions WHERE transaction_id = ?', 
+                          (transaction_id,))
+            if not cursor.fetchone():
+                raise ValueError('交易记录不存在')
+
+            # 获取基金ID
+            cursor.execute('SELECT fund_id FROM funds WHERE fund_code = ?', 
+                          (data['fund_code'],))
+            fund_result = cursor.fetchone()
+            if not fund_result:
+                raise ValueError('基金不存在')
+            
+            fund_id = fund_result[0]
+            
+            # 计算手续费
+            if data['transaction_type'] == 'sell':
+                fee = self.calculate_sell_fee(
+                    data['fund_code'],
+                    amount,
+                    data['transaction_date']
+                )
+            else:
+                fund_settings = self.get_fund_fees(data['fund_code'])
+                if not fund_settings:
+                    raise ValueError('未找到基金费率设置')
+                fee = amount * fund_settings['buy_fee']
+            
+            # 计算份额
+            shares = amount / nav
+            
+            # 更新交易记录
+            cursor.execute('''
+                UPDATE fund_transactions 
+                SET fund_id = ?, 
+                    transaction_type = ?, 
+                    amount = ?, 
+                    nav = ?, 
+                    fee = ?, 
+                    transaction_date = ?, 
+                    shares = ?
+                WHERE transaction_id = ?
+            ''', (fund_id, data['transaction_type'], amount, nav, fee,
+                  data['transaction_date'], shares, transaction_id))
+            
+            if cursor.rowcount == 0:
+                raise ValueError('更新失败，未找到对应的交易记录')
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            print(f"更新交易记录失败: {str(e)}")  # 添加日志输出
+            raise e
+        finally:
+            conn.close() 

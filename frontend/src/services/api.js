@@ -150,5 +150,45 @@ export const fundApi = {
             console.error('更新所有净值失败:', error);
             throw error;
         }
+    },
+
+    getTransactions: async (filters) => {
+        try {
+            const params = new URLSearchParams(filters);
+            return await axiosInstance.get(`/fund/transactions?${params}`);
+        } catch (error) {
+            console.error('获取交易记录失败:', error);
+            throw error;
+        }
+    },
+
+    deleteTransaction: async (transactionId) => {
+        try {
+            return await axiosInstance.delete(`/fund/transaction/${transactionId}`);
+        } catch (error) {
+            console.error('删除交易记录失败:', error);
+            throw error;
+        }
+    },
+
+    updateTransaction: async (transactionId, data) => {
+        try {
+            // 确保发送的数据格式正确
+            const updateData = {
+                fund_code: data.fund_code,
+                fund_name: data.fund_name,
+                transaction_type: data.transaction_type,
+                amount: parseFloat(data.amount),
+                nav: parseFloat(data.nav),
+                transaction_date: data.transaction_date
+            };
+            
+            return await axiosInstance.put(`/fund/transaction/${transactionId}`, updateData);
+        } catch (error) {
+            console.error('更新交易记录失败:', error);
+            throw error;
+        }
     }
 };
+
+export default fundApi;

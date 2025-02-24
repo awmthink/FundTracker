@@ -7,14 +7,20 @@
       <el-row :gutter="20">
         <el-col :span="24">
           <div class="action-bar">
-            <el-button type="primary" @click="showAddTransactionDialog">
+            <el-button 
+              type="primary" 
+              @click="showAddTransactionDialog"
+            >
               添加基金交易
             </el-button>
-            <el-button @click="showFundSettingsDialog">
+            <el-button 
+              @click="showFundSettingsDialog"
+            >
               基金设置
             </el-button>
           </div>
           <FundHoldings ref="holdings" />
+          <FundTransactions ref="transactions" @transaction-deleted="refreshHoldings" />
         </el-col>
       </el-row>
       <FundForm ref="fundForm" @transaction-added="refreshHoldings" />
@@ -27,13 +33,15 @@
 import FundForm from './components/FundForm.vue'
 import FundHoldings from './components/FundHoldings.vue'
 import FundSettings from './components/FundSettings.vue'
+import FundTransactions from './components/FundTransactions.vue'
 
 export default {
   name: 'App',
   components: {
     FundForm,
     FundHoldings,
-    FundSettings
+    FundSettings,
+    FundTransactions
   },
   methods: {
     showAddTransactionDialog() {
@@ -86,5 +94,9 @@ body {
 .action-bar {
   margin-bottom: 20px;
   text-align: right;
+}
+
+.action-bar .el-button + .el-button {
+  margin-left: 12px;
 }
 </style>

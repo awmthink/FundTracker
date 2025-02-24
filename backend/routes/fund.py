@@ -282,3 +282,56 @@ def update_all_navs():
             'status': 'error',
             'message': str(e)
         }), 500
+
+@fund_bp.route('/transactions', methods=['GET'])
+def get_transactions():
+    """获取交易记录"""
+    try:
+        filters = {
+            'fund_code': request.args.get('fund_code'),
+            'fund_name': request.args.get('fund_name'),
+            'start_date': request.args.get('start_date'),
+            'end_date': request.args.get('end_date'),
+            'transaction_type': request.args.get('transaction_type')
+        }
+        transactions = fund_service.get_transactions(filters)
+        return jsonify({
+            'status': 'success',
+            'data': transactions
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@fund_bp.route('/transaction/<int:transaction_id>', methods=['DELETE'])
+def delete_transaction(transaction_id):
+    """删除交易记录"""
+    try:
+        fund_service.delete_transaction(transaction_id)
+        return jsonify({
+            'status': 'success',
+            'message': '删除成功'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@fund_bp.route('/transaction/<int:transaction_id>', methods=['PUT'])
+def update_transaction(transaction_id):
+    """更新交易记录"""
+    try:
+        data = request.get_json()
+        fund_service.update_transaction(transaction_id, data)
+        return jsonify({
+            'status': 'success',
+            'message': '更新成功'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
