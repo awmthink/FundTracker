@@ -3,58 +3,140 @@
     <el-dialog
       title="添加基金交易"
       v-model="dialogVisible"
-      width="500px"
+      width="600px"
+      :close-on-click-modal="false"
     >
-      <form @submit.prevent="submitTransaction">
-        <div class="form-group">
-          <label>基金代码</label>
-          <div class="input-with-button">
-            <input v-model="transaction.fund_code" required @blur="handleFundCodeChange">
-            <el-button size="small" @click="handleFundCodeChange" :loading="loading">
-              获取信息
-            </el-button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>基金名称</label>
-          <input v-model="transaction.fund_name" disabled>
-        </div>
-        <div class="form-group">
-          <label>交易类型</label>
-          <select v-model="transaction.transaction_type" @change="calculateFee">
-            <option value="buy">买入</option>
-            <option value="sell">卖出</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>交易日期</label>
-          <input type="date" v-model="transaction.transaction_date" required @change="fetchHistoricalNav">
-        </div>
-        <div class="form-group">
-          <label>交易金额</label>
-          <input type="number" step="0.01" v-model="transaction.amount" required @input="calculateFee">
-        </div>
-        <div class="form-group">
-          <label>基金净值</label>
-          <input type="number" step="0.0001" v-model="transaction.nav" disabled>
-        </div>
-        <div class="form-group">
-          <label>手续费率 (%)</label>
-          <input type="number" step="0.01" v-model="displayFeeRate" disabled>
-        </div>
-        <div class="form-group">
-          <label>手续费</label>
-          <input type="number" step="0.01" v-model="transaction.fee" disabled>
-        </div>
-        <div class="form-group">
-          <label>预计份额</label>
-          <input type="number" step="0.01" v-model="transaction.shares" disabled>
-        </div>
+      <el-form 
+        ref="formRef"
+        :model="transaction"
+        :rules="rules"
+        label-width="120px"
+        label-position="right"
+      >
+        <!-- 基金代码 -->
+        <el-form-item label="基金代码" prop="fund_code">
+          <el-input 
+            v-model="transaction.fund_code"
+            placeholder="请输入6位基金代码"
+            maxlength="6"
+            @blur="handleFundCodeChange"
+          >
+            <template #append>
+              <el-button 
+                :loading="loading"
+                @click="handleFundCodeChange"
+              >
+                获取信息
+              </el-button>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <!-- 基金名称 -->
+        <el-form-item label="基金名称" prop="fund_name">
+          <el-input 
+            v-model="transaction.fund_name"
+            disabled
+            placeholder="基金名称将自动获取"
+          />
+        </el-form-item>
+
+        <!-- 交易类型 -->
+        <el-form-item label="交易类型" prop="transaction_type">
+          <el-select 
+            v-model="transaction.transaction_type"
+            style="width: 100%"
+            @change="calculateFee"
+          >
+            <el-option label="买入" value="buy" />
+            <el-option label="卖出" value="sell" />
+          </el-select>
+        </el-form-item>
+
+        <!-- 交易日期 -->
+        <el-form-item label="交易日期" prop="transaction_date">
+          <el-date-picker
+            v-model="transaction.transaction_date"
+            type="date"
+            style="width: 100%"
+            value-format="YYYY-MM-DD"
+            @change="fetchHistoricalNav"
+          />
+        </el-form-item>
+
+        <!-- 交易金额 -->
+        <el-form-item label="交易金额" prop="amount">
+          <el-input-number
+            v-model="transaction.amount"
+            :precision="2"
+            :step="100"
+            :min="0"
+            style="width: 100%"
+            @change="calculateFee"
+          />
+        </el-form-item>
+
+        <!-- 基金净值 -->
+        <el-form-item label="基金净值" prop="nav">
+          <el-input-number
+            v-model="transaction.nav"
+            :precision="4"
+            :step="0.0001"
+            :min="0"
+            style="width: 100%"
+            disabled
+          />
+        </el-form-item>
+
+        <!-- 手续费率 -->
+        <el-form-item label="手续费率 (%)">
+          <el-input-number
+            v-model="displayFeeRate"
+            :precision="2"
+            :step="0.01"
+            :min="0"
+            style="width: 100%"
+            disabled
+          />
+        </el-form-item>
+
+        <!-- 手续费 -->
+        <el-form-item label="手续费">
+          <el-input-number
+            v-model="transaction.fee"
+            :precision="2"
+            :step="0.01"
+            :min="0"
+            style="width: 100%"
+            disabled
+          />
+        </el-form-item>
+
+        <!-- 预计份额 -->
+        <el-form-item label="预计份额">
+          <el-input-number
+            v-model="transaction.shares"
+            :precision="2"
+            :step="0.01"
+            :min="0"
+            style="width: 100%"
+            disabled
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
         <div class="dialog-footer">
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" native-type="submit" :disabled="!isFormValid">提交</el-button>
+          <el-button 
+            type="primary" 
+            @click="submitTransaction"
+            :disabled="!isFormValid"
+          >
+            提交
+          </el-button>
         </div>
-      </form>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -70,7 +152,30 @@ export default {
       loading: false,
       transaction: this.getEmptyTransaction(),
       fundSettings: null,
-      displayFeeRate: 0
+      displayFeeRate: 0,
+      rules: {
+        fund_code: [
+          { required: true, message: '请输入基金代码', trigger: 'blur' },
+          { pattern: /^\d{6}$/, message: '请输入6位数字的基金代码', trigger: 'blur' }
+        ],
+        fund_name: [
+          { required: true, message: '基金名称不能为空', trigger: 'blur' }
+        ],
+        transaction_type: [
+          { required: true, message: '请选择交易类型', trigger: 'change' }
+        ],
+        transaction_date: [
+          { required: true, message: '请选择交易日期', trigger: 'change' }
+        ],
+        amount: [
+          { required: true, message: '请输入交易金额', trigger: 'blur' },
+          { type: 'number', min: 0, message: '交易金额必须大于0', trigger: 'blur' }
+        ],
+        nav: [
+          { required: true, message: '基金净值不能为空', trigger: 'blur' },
+          { type: 'number', min: 0, message: '基金净值必须大于0', trigger: 'blur' }
+        ]
+      }
     }
   },
   computed: {
@@ -188,34 +293,29 @@ export default {
 </script>
 
 <style scoped>
-.form-group {
-  margin-bottom: 15px;
+.el-dialog {
+  border-radius: 8px;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 5px;
-}
-
-.form-group input,
-.form-group select {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-}
-
-.input-with-button {
-  display: flex;
-  gap: 10px;
-}
-
-.input-with-button input {
-  flex: 1;
+.el-form {
+  padding: 20px;
 }
 
 .dialog-footer {
-  margin-top: 20px;
   text-align: right;
+  padding: 0 20px 20px;
+}
+
+:deep(.el-input-number) {
+  width: 100%;
+}
+
+:deep(.el-form-item__label) {
+  font-weight: 500;
+}
+
+:deep(.el-input.is-disabled .el-input__inner) {
+  color: #606266;
+  background-color: #f5f7fa;
 }
 </style>

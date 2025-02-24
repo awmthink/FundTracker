@@ -4,11 +4,120 @@ from datetime import datetime, timedelta
 import requests
 import re
 import json
+from typing import Optional, Dict, Any
 
 class FundService:
     def __init__(self):
         self.db_name = 'finance.db'
-        self.fund_api_url = "http://fundgz.1234567.com.cn/js"
+        self.base_urls = {
+            'fund_info': 'http://fund.eastmoney.com/pingzhongdata/{}.js',
+            'current_nav': 'http://fundgz.1234567.com.cn/js/{}.js',
+            'historical_nav': 'http://fund.eastmoney.com/f10/F10DataApi.aspx'
+        }
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Referer': 'http://fund.eastmoney.com/',
+            'Accept': '*/*',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+        }
+
+    def _make_request(self, url: str, params: Optional[Dict] = None) -> Optional[str]:
+        """统一的HTTP请求处理"""
+        try:
+            response = requests.get(url, params=params, headers=self.headers, timeout=5)
+            if response.status_code == 200:
+                return response.text
+            print(f"Request failed with status code: {response.status_code}")
+            return None
+        except Exception as e:
+            print(f"Request error: {str(e)}")
+            return None
+
+    def fetch_fund_info(self, fund_code: str) -> Optional[Dict[str, str]]:
+        """获取基金基本信息"""
+        url = self.base_urls['fund_info'].format(fund_code)
+        content = self._make_request(url)
+        
+        if not content:
+            return None
+            
+        name_match = re.search(r'fS_name = "([^"]+)"', content)
+        code_match = re.search(r'fS_code = "([^"]+)"', content)
+        
+        if name_match and code_match:
+            return {
+                'code': code_match.group(1),
+                'name': name_match.group(1)
+            }
+        return None
+
+    def fetch_current_nav(self, fund_code: str) -> Optional[Dict[str, Any]]:
+        """获取基金当前净值"""
+        url = self.base_urls['current_nav'].format(fund_code)
+        content = self._make_request(url)
+        
+        if not content or 'jsonpgz(' not in content:
+            return None
+            
+        try:
+            json_str = content.replace('jsonpgz(', '').replace(');', '')
+            fund_data = json.loads(json_str)
+            
+            nav = float(fund_data.get('gsz', 0)) or float(fund_data.get('dwjz', 0))
+            update_time = fund_data.get('jzrq')
+            
+            if nav and update_time:
+                self._update_fund_nav(fund_code, nav, update_time)
+                return {'nav': nav, 'update_time': update_time}
+        except Exception as e:
+            print(f"Error parsing current NAV: {str(e)}")
+        return None
+
+    def get_historical_nav(self, fund_code: str, date: str) -> Optional[float]:
+        """获取历史净值"""
+        params = {
+            'type': 'lsjz',
+            'code': fund_code,
+            'page': 1,
+            'per': 1,
+            'sdate': date,
+            'edate': date
+        }
+        
+        content = self._make_request(self.base_urls['historical_nav'], params)
+        if not content:
+            return None
+            
+        pattern = r'<td>(\d{4}-\d{2}-\d{2})</td><td.*?>(.*?)</td>'
+        matches = re.findall(pattern, content)
+        
+        for date_str, nav_str in matches:
+            if date_str == date:
+                try:
+                    return float(nav_str)
+                except ValueError:
+                    print(f"NAV conversion failed: {nav_str}")
+                    
+        # 如果没找到历史净值，尝试获取当前净值
+        current_nav = self.fetch_current_nav(fund_code)
+        return current_nav['nav'] if current_nav else None
+
+    def _update_fund_nav(self, fund_code: str, nav: float, update_time: str) -> None:
+        """更新基金净值到数据库"""
+        conn = self.get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE funds 
+                SET current_nav = ?, last_update_time = ? 
+                WHERE fund_code = ?
+            ''', (nav, update_time, fund_code))
+            conn.commit()
+        except Exception as e:
+            print(f"Error updating fund NAV: {str(e)}")
+            conn.rollback()
+        finally:
+            conn.close()
 
     def get_db_connection(self):
         conn = sqlite3.connect(self.db_name)
@@ -114,66 +223,6 @@ class FundService:
             }
         finally:
             conn.close()
-
-    def get_historical_nav(self, fund_code, date):
-        """从天天基金获取历史净值"""
-        try:
-            # 使用天天基金的历史净值接口
-            url = f"http://fund.eastmoney.com/f10/F10DataApi.aspx"
-            params = {
-                'type': 'lsjz',  # 历史净值
-                'code': fund_code,
-                'page': 1,
-                'per': 1,  # 只获取一条记录
-                'sdate': date,
-                'edate': date
-            }
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            response = requests.get(url, params=params, headers=headers)
-            
-            if response.status_code != 200:
-                print(f"获取基金{fund_code}净值失败: HTTP {response.status_code}")
-                return None
-            
-            # 返回的是HTML格式的数据，需要解析
-            content = response.text
-            
-            # 使用正则表达式提取数据
-            import re
-            pattern = r'<td>(\d{4}-\d{2}-\d{2})</td><td.*?>(.*?)</td>'
-            matches = re.findall(pattern, content)
-            
-            if matches:
-                for date_str, nav_str in matches:
-                    if date_str == date:  # 确保日期匹配
-                        try:
-                            return float(nav_str)
-                        except ValueError:
-                            print(f"净值转换失败: {nav_str}")
-                            return None
-            
-            # 如果没有找到对应日期的数据，尝试获取最近的净值
-            url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
-            params = {
-                'rt': datetime.now().timestamp()
-            }
-            
-            response = requests.get(url, params=params, headers=headers)
-            if response.status_code == 200:
-                content = response.text
-                # 返回格式类似：jsonpgz({"fundcode":"000001","name":"xxx","jzrq":"2023-11-23","dwjz":"1.0100",...})
-                match = re.search(r'"dwjz":"([\d\.]+)"', content)
-                if match:
-                    return float(match.group(1))
-            
-            return None
-            
-        except Exception as e:
-            print(f"获取基金{fund_code}历史净值失败: {str(e)}")
-            return None
 
     def get_holdings(self):
         """获取基金持仓信息"""
@@ -413,110 +462,6 @@ class FundService:
             
         finally:
             conn.close()
-
-    def fetch_fund_info(self, fund_code):
-        """从天天基金网获取基金信息"""
-        try:
-            print(f"Fetching fund info for code: {fund_code}")
-            
-            # 使用天天基金的另一个API接口
-            url = f'http://fund.eastmoney.com/pingzhongdata/{fund_code}.js'
-            print(f"Requesting URL: {url}")
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Referer': 'http://fund.eastmoney.com/',
-                'Accept': '*/*',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=5)
-            print(f"Response status code: {response.status_code}")
-            
-            if response.status_code == 200:
-                content = response.text
-                
-                # 解析基金名称
-                name_match = re.search(r'fS_name = "([^"]+)"', content)
-                code_match = re.search(r'fS_code = "([^"]+)"', content)
-                
-                if name_match and code_match:
-                    fund_name = name_match.group(1)
-                    fund_code = code_match.group(1)
-                    
-                    result = {
-                        'code': fund_code,
-                        'name': fund_name
-                    }
-                    print(f"Parsed result: {result}")
-                    return result
-                else:
-                    print("Could not find fund name or code in response")
-            
-            return None
-            
-        except Exception as e:
-            import traceback
-            print(f"Error in fetch_fund_info: {str(e)}")
-            print(traceback.format_exc())
-            return None
-
-    def fetch_current_nav(self, fund_code):
-        """获取基金当前净值"""
-        try:
-            print(f"Fetching current NAV for fund: {fund_code}")
-            
-            # 使用天天基金的API
-            url = f'http://fundgz.1234567.com.cn/js/{fund_code}.js'
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Referer': 'http://fund.eastmoney.com/'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=5)
-            print(f"Response status: {response.status_code}")
-            print(f"Response content: {response.text}")
-            
-            if response.status_code == 200:
-                # 解析返回的数据，格式为：jsonpgz({"fundcode":"001186","name":"富国文体健康股票","jzrq":"2024-01-19","dwjz":"1.5397","gsz":"1.5558","gszzl":"1.05"});
-                content = response.text
-                if 'jsonpgz(' in content and ');' in content:
-                    json_str = content.replace('jsonpgz(', '').replace(');', '')
-                    print(f"Extracted JSON: {json_str}")
-                    
-                    fund_data = json.loads(json_str)
-                    
-                    # 获取净值信息
-                    nav = float(fund_data.get('gsz', 0)) or float(fund_data.get('dwjz', 0))
-                    update_time = fund_data.get('jzrq')
-                    
-                    print(f"Parsed NAV: {nav}, Update time: {update_time}")
-                    
-                    # 更新数据库
-                    conn = self.get_db_connection()
-                    try:
-                        cursor = conn.cursor()
-                        cursor.execute('''
-                            UPDATE funds 
-                            SET current_nav = ?, last_update_time = ? 
-                            WHERE fund_code = ?
-                        ''', (nav, update_time, fund_code))
-                        conn.commit()
-                    finally:
-                        conn.close()
-                    
-                    return {
-                        'nav': nav,
-                        'update_time': update_time
-                    }
-            
-            return None
-            
-        except Exception as e:
-            import traceback
-            print(f"Error fetching current NAV: {str(e)}")
-            print(traceback.format_exc())
-            return None
 
     def update_all_navs(self):
         """更新所有基金的最新净值"""
