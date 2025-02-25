@@ -185,15 +185,24 @@ export default {
         buy_fee: parseFloat(fund.buy_fee)
       };
     },
+    // 在 FundSettings.vue 中修改删除处理方法
     async handleDelete(fund) {
       try {
-        await this.$confirm('确认删除该基金设置吗？')
+        await this.$confirm(
+          '确认删除该基金设置吗？如果存在相关交易记录将无法删除。',
+          '警告',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        )
         await fundApi.deleteFundSettings(fund.fund_code)
         this.$message.success('删除成功')
         this.loadFundSettings()
       } catch (error) {
         if (error !== 'cancel') {
-          this.$message.error('删除失败')
+          this.$message.error(error.response?.data?.message || '删除失败')
         }
       }
     },

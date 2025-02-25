@@ -334,14 +334,34 @@ class FundService:
         finally:
             conn.close()
 
+    def check_fund_transactions(self, fund_code):
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                SELECT COUNT(*) as count 
+                FROM fund_transactions 
+                WHERE fund_code = ?
+            ''', (fund_code,))
+            result = cursor.fetchone()
+            return result['count'] if result else 0
+        finally:
+            conn.close()
+
     def delete_fund_settings(self, fund_code):
-        """删除基金设置"""
+        # 先检查是否存在交易记录
+        transaction_count = self.check_fund_transactions(fund_code)
+        if transaction_count > 0:
+            raise ValueError(f'无法删除该基金，存在 {transaction_count} 条相关交易记录')
+            
         conn = self.get_db_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM funds WHERE fund_code = ?', 
-                         (fund_code,))
+            cursor.execute('DELETE FROM funds WHERE fund_code = ?', (fund_code,))
             conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
         finally:
             conn.close()
 
