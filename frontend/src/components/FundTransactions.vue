@@ -27,8 +27,12 @@
         <el-input v-model="filters.fund_name" placeholder="请输入基金名称" />
       </el-form-item>
       <el-form-item label="交易类型">
-        <el-select v-model="filters.transaction_type" placeholder="请选择">
-          <el-option label="全部" value="" />
+        <el-select 
+          v-model="filters.transaction_type" 
+          placeholder="请选择"
+          style="width: 180px"
+        >
+          <el-option label="全部" value="all" />
           <el-option label="买入" value="buy" />
           <el-option label="卖出" value="sell" />
         </el-select>
@@ -51,7 +55,11 @@
     </el-form>
 
     <!-- 交易记录表格 -->
-    <el-table :data="transactions" border style="width: 100%">
+    <el-table
+      :data="transactions"
+      style="width: 100%"
+      :header-cell-style="{ background: 'var(--card-bg)', color: 'var(--text-color)' }"
+    >
       <el-table-column prop="fund_code" label="基金代码" width="100" />
       <el-table-column prop="fund_name" label="基金名称" width="200" />
       <el-table-column prop="transaction_type" label="交易类型" width="100">
@@ -169,7 +177,7 @@ export default {
       filters: {
         fund_code: '',
         fund_name: '',
-        transaction_type: '',
+        transaction_type: 'all',
         start_date: '',
         end_date: ''
       },
@@ -190,10 +198,23 @@ export default {
   methods: {
     async loadTransactions() {
       try {
-        const filters = { ...this.filters }
-        if (this.dateRange && this.dateRange.length === 2) {
-          filters.start_date = this.dateRange[0]
-          filters.end_date = this.dateRange[1]
+        let filters = {}
+        
+        if (this.quickDateRange === 'custom') {
+          // 自定义模式：使用所有筛选条件
+          filters = { ...this.filters }
+          if (this.dateRange && this.dateRange.length === 2) {
+            filters.start_date = this.dateRange[0]
+            filters.end_date = this.dateRange[1]
+          }
+        } else {
+          // 快捷查询模式：只使用日期条件
+          if (this.dateRange && this.dateRange.length === 2) {
+            filters = {
+              start_date: this.dateRange[0],
+              end_date: this.dateRange[1]
+            }
+          }
         }
         
         const response = await fundApi.getTransactions(filters)
@@ -213,13 +234,13 @@ export default {
       this.filters = {
         fund_code: '',
         fund_name: '',
-        transaction_type: '',
+        transaction_type: 'all',
         start_date: '',
         end_date: ''
       }
       this.dateRange = []
       this.quickDateRange = '1'
-      this.handleQuickDateChange('1') // Reset to last month and load data
+      this.handleQuickDateChange('1') // 重置为最近1个月的数据
     },
     
     handleEdit(transaction) {
@@ -284,10 +305,11 @@ export default {
     },
     handleQuickDateChange(value) {
       if (value === 'custom') {
-        // If custom is selected, don't modify the date range
+        // 切换到自定义模式时，保持当前日期范围
         return;
       }
       
+      // 快捷查询模式：重置其他筛选条件，只设置日期
       const months = parseInt(value);
       const endDate = new Date();
       const startDate = new Date();
@@ -297,6 +319,17 @@ export default {
         startDate.toISOString().split('T')[0],
         endDate.toISOString().split('T')[0]
       ];
+      
+      // 清空其他筛选条件
+      if (value !== 'custom') {
+        this.filters = {
+          fund_code: '',
+          fund_name: '',
+          transaction_type: 'all',
+          start_date: '',
+          end_date: ''
+        }
+      }
       
       this.loadTransactions();
     },
@@ -310,11 +343,11 @@ export default {
 
 <style scoped>
 .fund-transactions {
-  background: #fff;
+  background-color: var(--card-bg);
+  border-radius: 8px;
   padding: 20px;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
   margin-top: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
 }
 
 .header {
@@ -326,6 +359,7 @@ export default {
 
 .header h2 {
   margin: 0;
+  color: var(--text-color);
 }
 
 .quick-filters {
@@ -334,20 +368,97 @@ export default {
 
 .search-form {
   margin-bottom: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #ebeef5;
+  padding: 20px;
+  background-color: var(--bg-color);
+  border-radius: 4px;
 }
 
-.dialog-footer {
-  text-align: right;
-  margin-top: 20px;
+:deep(.el-table) {
+  background-color: var(--card-bg);
+  color: var(--text-color);
 }
 
-.el-button + .el-button {
-  margin-left: 8px;
+:deep(.el-table__header-wrapper) {
+  background-color: var(--card-bg);
 }
 
-.el-table .el-button {
-  padding: 6px 12px;
+:deep(.el-table th) {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border-bottom-color: var(--border-color);
+}
+
+:deep(.el-table td) {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border-bottom-color: var(--border-color);
+}
+
+:deep(.el-table--enable-row-hover .el-table__body tr:hover > td) {
+  background-color: var(--hover-bg);
+}
+
+:deep(.el-radio-button__inner) {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:deep(.el-radio-button__orig-radio:checked + .el-radio-button__inner) {
+  color: #fff;
+}
+
+:deep(.el-form-item__label) {
+  color: var(--text-color);
+}
+
+:deep(.el-input__inner),
+:deep(.el-select .el-input__inner),
+:deep(.el-date-editor.el-input__inner) {
+  background-color: var(--bg-color);
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:deep(.el-table__empty-block) {
+  background-color: var(--card-bg);
+}
+
+:deep(.el-table__empty-text) {
+  color: var(--text-color-secondary);
+}
+
+/* 确保分页器也适配暗色主题 */
+:deep(.el-pagination) {
+  color: var(--text-color);
+  background-color: var(--card-bg);
+}
+
+:deep(.el-pagination button) {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:deep(.el-pagination .el-select .el-input .el-input__inner) {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:deep(.el-pagination .el-pager li) {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:deep(.el-pagination .el-pager li.active) {
+  color: var(--el-color-primary);
+}
+
+.el-input,
+.el-select {
+  width: 180px !important;
+}
+
+.el-date-picker {
+  width: 240px !important;  /* 日期选择器需要更宽一些 */
 }
 </style> 

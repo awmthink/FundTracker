@@ -195,7 +195,7 @@ export default {
 
 .header h2 {
   margin: 0;
-  color: #303133;
+  color: var(--text-color);
 }
 
 .actions {
@@ -205,7 +205,7 @@ export default {
 }
 
 .last-update-time {
-  color: #909399;
+  color: var(--text-color-secondary);
   font-size: 14px;
 }
 
@@ -217,11 +217,13 @@ export default {
 
 .holding-card {
   transition: all 0.3s;
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
 }
 
 .holding-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .holding-header {
@@ -238,12 +240,12 @@ export default {
 .fund-code {
   font-size: 16px;
   font-weight: bold;
-  color: #303133;
+  color: var(--text-color);
 }
 
 .fund-name {
   font-size: 14px;
-  color: #606266;
+  color: var(--text-color-secondary);
   margin-top: 4px;
 }
 
@@ -267,12 +269,12 @@ export default {
 
 .label {
   font-size: 13px;
-  color: #909399;
+  color: var(--text-color-secondary);
 }
 
 .value {
   font-size: 15px;
-  color: #303133;
+  color: var(--text-color);
   font-weight: 500;
 }
 

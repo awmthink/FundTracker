@@ -70,7 +70,6 @@
               v-model="currentFund.fund_code" 
               style="width: 200px"
               @blur="handleFundCodeBlur"
-              :disabled="!!currentFund.fund_name"
             />
           </el-form-item>
           
@@ -139,7 +138,7 @@
         </el-form>
 
         <div class="dialog-footer" style="text-align: center; margin-top: 20px;">
-          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button @click="handleCancel">取消</el-button>
           <el-button type="primary" @click="saveFundSettings">保存</el-button>
         </div>
       </div>
@@ -255,13 +254,11 @@ export default {
     },
     async saveFundSettings() {
       try {
-        // 确保有基金名称
         if (!this.currentFund.fund_name) {
           this.$message.error('请先获取基金信息');
           return;
         }
 
-        // 转换费率为小数
         const fundData = {
           ...this.currentFund,
           buy_fee: this.currentFund.buy_fee / 100,
@@ -274,6 +271,7 @@ export default {
         if (response.data.status === 'success') {
           this.$message.success('保存成功');
           await this.loadFundSettings();
+          this.resetForm();
           this.dialogVisible = false;
         } else {
           throw new Error(response.data.message || '未知错误');
@@ -322,6 +320,10 @@ export default {
       } finally {
         this.loadingFundInfo = false;
       }
+    },
+    handleCancel() {
+      this.resetForm();
+      this.dialogVisible = false;
     },
   },
   mounted() {
