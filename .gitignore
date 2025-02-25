@@ -45,6 +45,7 @@ selenium-debug.log
 *.db
 *.sqlite3
 db_exports
+*.backup
 
 # Logs
 logs/
