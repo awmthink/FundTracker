@@ -3,7 +3,7 @@
     <el-dialog
       title="基金设置"
       v-model="dialogVisible"
-      width="1200px"
+      width="800px"
       :close-on-click-modal="false"
       :destroy-on-close="true"
     >
@@ -12,45 +12,40 @@
         <el-table 
           :data="funds" 
           style="width: 100%; margin-bottom: 20px"
-          max-height="500px"
+          max-height="400px"
           border
         >
-          <el-table-column prop="fund_code" label="基金代码" width="100" fixed />
-          <el-table-column prop="fund_name" label="基金名称" width="220" fixed />
-          <el-table-column label="买入费率(%)" width="120">
+          <el-table-column 
+            prop="fund_code" 
+            label="基金代码" 
+            width="120" 
+            align="center"
+          />
+          <el-table-column 
+            prop="fund_name" 
+            label="基金名称" 
+            min-width="250" 
+            align="center"
+          />
+          <el-table-column 
+            label="买入费率(%)" 
+            width="120" 
+            align="center"
+          >
             <template #default="scope">
               {{ scope.row.buy_fee }}
             </template>
           </el-table-column>
-          <el-table-column label="赎回费率-7天内(%)" width="160">
+          <el-table-column 
+            label="操作" 
+            width="150" 
+            align="center"
+          >
             <template #default="scope">
-              {{ scope.row.sell_fee_lt7 }}
-            </template>
-          </el-table-column>
-          <el-table-column label="赎回费率-7-365天(%)" width="180">
-            <template #default="scope">
-              {{ scope.row.sell_fee_lt365 }}
-            </template>
-          </el-table-column>
-          <el-table-column label="赎回费率-365天以上(%)" width="180">
-            <template #default="scope">
-              {{ scope.row.sell_fee_gt365 }}
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="150" fixed="right">
-            <template #default="scope">
-              <el-button
-                size="small"
-                type="primary"
-                @click="editFund(scope.row)"
-              >
+              <el-button size="small" type="primary" @click="editFund(scope.row)">
                 编辑
               </el-button>
-              <el-button
-                size="small"
-                type="danger"
-                @click="handleDelete(scope.row)"
-              >
+              <el-button size="small" type="danger" @click="handleDelete(scope.row)">
                 删除
               </el-button>
             </template>
@@ -62,13 +57,13 @@
           ref="fundForm"
           :model="currentFund"
           :rules="rules"
-          label-width="180px"
-          style="max-width: 800px; margin: 0 auto;"
+          label-width="120px"
+          style="max-width: 500px; margin: 0 auto;"
         >
           <el-form-item label="基金代码" prop="fund_code">
             <el-input 
               v-model="currentFund.fund_code" 
-              style="width: 200px"
+              style="width: 180px"
               @blur="handleFundCodeBlur"
             />
           </el-form-item>
@@ -102,39 +97,6 @@
               style="width: 180px"
             />
           </el-form-item>
-          
-          <el-form-item label="赎回费率-7天内(%)" prop="sell_fee_lt7">
-            <el-input-number
-              v-model="currentFund.sell_fee_lt7"
-              :precision="4"
-              :step="0.0001"
-              :min="0"
-              :max="5"
-              style="width: 180px"
-            />
-          </el-form-item>
-          
-          <el-form-item label="赎回费率-7-365天(%)" prop="sell_fee_lt365">
-            <el-input-number
-              v-model="currentFund.sell_fee_lt365"
-              :precision="4"
-              :step="0.0001"
-              :min="0"
-              :max="5"
-              style="width: 180px"
-            />
-          </el-form-item>
-          
-          <el-form-item label="赎回费率-365天以上(%)" prop="sell_fee_gt365">
-            <el-input-number
-              v-model="currentFund.sell_fee_gt365"
-              :precision="4"
-              :step="0.0001"
-              :min="0"
-              :max="5"
-              style="width: 180px"
-            />
-          </el-form-item>
         </el-form>
 
         <div class="dialog-footer" style="text-align: center; margin-top: 20px;">
@@ -159,9 +121,6 @@ export default {
         fund_code: '',
         fund_name: '',
         buy_fee: 0,
-        sell_fee_lt7: 0,
-        sell_fee_lt365: 0,
-        sell_fee_gt365: 0
       },
       isEditing: false,
       rules: {
@@ -175,15 +134,6 @@ export default {
         buy_fee: [
           { required: true, message: '请输入买入费率', trigger: 'blur' }
         ],
-        sell_fee_lt7: [
-          { required: true, message: '请输入7天内赎回费率', trigger: 'blur' }
-        ],
-        sell_fee_lt365: [
-          { required: true, message: '请输入7-365天赎回费率', trigger: 'blur' }
-        ],
-        sell_fee_gt365: [
-          { required: true, message: '请输入365天以上赎回费率', trigger: 'blur' }
-        ]
       },
       loading: false,
       loadingFundInfo: false,
@@ -199,10 +149,7 @@ export default {
           this.funds = response.data.data.map(fund => ({
             fund_code: fund.fund_code,
             fund_name: fund.fund_name,
-            buy_fee: (fund.buy_fee * 100).toFixed(4),
-            sell_fee_lt7: (fund.sell_fee_lt7 * 100).toFixed(4),
-            sell_fee_lt365: (fund.sell_fee_lt365 * 100).toFixed(4),
-            sell_fee_gt365: (fund.sell_fee_gt365 * 100).toFixed(4)
+            buy_fee: (fund.buy_fee * 100).toFixed(4)
           }));
         } else {
           throw new Error(response.data.message || '未知错误');
@@ -235,10 +182,7 @@ export default {
       this.currentFund = {
         fund_code: fund.fund_code,
         fund_name: fund.fund_name,
-        buy_fee: parseFloat(fund.buy_fee),
-        sell_fee_lt7: parseFloat(fund.sell_fee_lt7),
-        sell_fee_lt365: parseFloat(fund.sell_fee_lt365),
-        sell_fee_gt365: parseFloat(fund.sell_fee_gt365)
+        buy_fee: parseFloat(fund.buy_fee)
       };
     },
     async handleDelete(fund) {
@@ -262,10 +206,7 @@ export default {
 
         const fundData = {
           ...this.currentFund,
-          buy_fee: this.currentFund.buy_fee / 100,
-          sell_fee_lt7: this.currentFund.sell_fee_lt7 / 100,
-          sell_fee_lt365: this.currentFund.sell_fee_lt365 / 100,
-          sell_fee_gt365: this.currentFund.sell_fee_gt365 / 100
+          buy_fee: this.currentFund.buy_fee / 100
         };
         
         const response = await fundApi.saveFundSettings(fundData);
@@ -287,9 +228,6 @@ export default {
         fund_code: '',
         fund_name: '',
         buy_fee: 0,
-        sell_fee_lt7: 0,
-        sell_fee_lt365: 0,
-        sell_fee_gt365: 0
       };
       if (this.$refs.fundForm) {
         this.$refs.fundForm.resetFields();

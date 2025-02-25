@@ -313,25 +313,18 @@ class FundService:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO funds (
-                    fund_code, fund_name, buy_fee, 
-                    sell_fee_lt7, sell_fee_lt365, sell_fee_gt365,
+                    fund_code, fund_name, buy_fee,
                     current_nav, last_update_time,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, 0, NULL, CURRENT_TIMESTAMP)
                 ON CONFLICT(fund_code) DO UPDATE SET
                     fund_name = excluded.fund_name,
                     buy_fee = excluded.buy_fee,
-                    sell_fee_lt7 = excluded.sell_fee_lt7,
-                    sell_fee_lt365 = excluded.sell_fee_lt365,
-                    sell_fee_gt365 = excluded.sell_fee_gt365,
                     updated_at = CURRENT_TIMESTAMP
             ''', (
                 fund_data['fund_code'],
                 fund_data['fund_name'],
-                fund_data['buy_fee'],
-                fund_data['sell_fee_lt7'],
-                fund_data['sell_fee_lt365'],
-                fund_data['sell_fee_gt365']
+                fund_data['buy_fee']
             ))
             conn.commit()
             return True
@@ -358,17 +351,14 @@ class FundService:
         try:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT buy_fee, sell_fee_lt7, sell_fee_lt365, sell_fee_gt365 
+                SELECT buy_fee
                 FROM funds
                 WHERE fund_code = ?
             ''', (fund_code,))
             row = cursor.fetchone()
             if row:
                 return {
-                    'buy_fee': float(row['buy_fee']),
-                    'sell_fee_lt7': float(row['sell_fee_lt7']),
-                    'sell_fee_lt365': float(row['sell_fee_lt365']),
-                    'sell_fee_gt365': float(row['sell_fee_gt365'])
+                    'buy_fee': float(row['buy_fee'])
                 }
             return None
         finally:

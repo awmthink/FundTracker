@@ -164,8 +164,7 @@ def get_all_fund_settings():
     try:
         cursor = fund_service.get_db_connection().cursor()
         cursor.execute('''
-            SELECT fund_code, fund_name, buy_fee, 
-                   sell_fee_lt7, sell_fee_lt365, sell_fee_gt365
+            SELECT fund_code, fund_name, buy_fee
             FROM funds
             ORDER BY fund_code
         ''')
@@ -175,10 +174,7 @@ def get_all_fund_settings():
             'data': [{
                 'fund_code': row['fund_code'],
                 'fund_name': row['fund_name'],
-                'buy_fee': float(row['buy_fee']),
-                'sell_fee_lt7': float(row['sell_fee_lt7']),
-                'sell_fee_lt365': float(row['sell_fee_lt365']),
-                'sell_fee_gt365': float(row['sell_fee_gt365'])
+                'buy_fee': float(row['buy_fee'])
             } for row in settings]
         })
     except Exception as e:

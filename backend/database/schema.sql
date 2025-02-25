@@ -5,9 +5,6 @@ CREATE TABLE funds (
     current_nav REAL DEFAULT 0,
     last_update_time DATETIME,
     buy_fee REAL DEFAULT 0,
-    sell_fee_lt7 REAL DEFAULT 0,
-    sell_fee_lt365 REAL DEFAULT 0,
-    sell_fee_gt365 REAL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
