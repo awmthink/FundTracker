@@ -146,43 +146,13 @@ class FundService:
                 VALUES (?, ?, ?)
             ''', (data['fund_code'], data['fund_name'], data['nav']))
             
-            # 获取基金ID
-            cursor.execute('SELECT fund_id FROM funds WHERE fund_code = ?', 
-                          (data['fund_code'],))
-            fund_id = cursor.fetchone()[0]
-            
-            # 处理数值
-            amount = float(data['amount'])
-            nav = float(data['nav'])
-            fee = float(data['fee'])
-            shares = float(data['shares'])
-            
-            if data['transaction_type'] == 'sell':
-                # 赎回时：
-                # - shares 是赎回份额（等于前端传来的 amount）
-                # - fee 是用户输入的手续费
-                # - amount 计算为实际的交易金额，实际到账金额为 amount - fee
-                amount = shares * nav 
-            else:  # 买入
-                # 申购时：
-                # - amount 是申购金额
-                # - fee 是计算的手续费
-                # - shares 是计算的份额
-                # 验证前端计算的份额是否正确
-                expected_shares = (amount - fee) / nav
-                if abs(expected_shares - shares) > 0.01:  # 允许0.01的误差
-                    return {
-                        'status': 'error',
-                        'message': '份额计算不匹配'
-                    }
-            
-            # 添加交易记录
+            # 直接使用 fund_code 添加交易记录
             cursor.execute('''
                 INSERT INTO fund_transactions 
-                (fund_id, transaction_type, amount, nav, fee, transaction_date, shares)
+                (fund_code, transaction_type, amount, nav, fee, transaction_date, shares)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (fund_id, data['transaction_type'], amount, nav,
-                  fee, data['transaction_date'], shares))
+            ''', (data['fund_code'], data['transaction_type'], data['amount'], data['nav'],
+                  data['fee'], data['transaction_date'], data['shares']))
             
             conn.commit()
             return {
@@ -226,7 +196,7 @@ class FundService:
                     t.transaction_date,
                     t.nav as transaction_nav
                 FROM funds f
-                JOIN fund_transactions t ON f.fund_id = t.fund_id
+                JOIN fund_transactions t ON f.fund_code = t.fund_code
                 ORDER BY f.fund_code, t.transaction_date ASC
             ''')
             
@@ -442,7 +412,7 @@ class FundService:
             query = '''
                 SELECT 
                     t.transaction_id,
-                    f.fund_code,
+                    t.fund_code,
                     f.fund_name,
                     t.transaction_type,
                     t.amount,
@@ -451,7 +421,7 @@ class FundService:
                     t.shares,
                     t.transaction_date
                 FROM fund_transactions t
-                JOIN funds f ON t.fund_id = f.fund_id
+                JOIN funds f ON t.fund_code = f.fund_code
                 WHERE 1=1
             '''
             params = []
