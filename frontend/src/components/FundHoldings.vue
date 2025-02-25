@@ -44,17 +44,9 @@
       <el-card v-for="holding in holdings" :key="holding.fund_code" class="holding-card">
         <div class="holding-header">
           <div class="fund-info">
-            <div class="fund-code">{{ holding.fund_code }}</div>
             <div class="fund-name">{{ holding.fund_name }}</div>
+            <div class="fund-code">{{ holding.fund_code }}</div>
           </div>
-          <el-button
-            size="small"
-            type="primary"
-            :loading="holding.updating"
-            @click="updateSingleNav(holding)"
-          >
-            更新净值
-          </el-button>
         </div>
 
         <div class="holding-details">
@@ -309,13 +301,13 @@ export default {
   flex: 1;
 }
 
-.fund-code {
+.fund-name {
   font-size: 16px;
   font-weight: bold;
   color: var(--text-color);
 }
 
-.fund-name {
+.fund-code {
   font-size: 14px;
   color: var(--text-color-secondary);
   margin-top: 4px;
