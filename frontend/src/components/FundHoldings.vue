@@ -109,10 +109,12 @@ export default {
       try {
         const response = await fundApi.getHoldings()
         if (response.data.status === 'success') {
-          this.holdings = response.data.data.map(holding => ({
-            ...holding,
-            updating: false
-          }))
+          this.holdings = response.data.data
+            .map(holding => ({
+              ...holding,
+              updating: false
+            }))
+            .sort((a, b) => b.market_value - a.market_value)
           this.lastUpdateTime = new Date()
         }
       } catch (error) {
