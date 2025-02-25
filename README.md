@@ -1,49 +1,92 @@
 # FundTracker
 
-一个简洁高效的基金投资管理系统，帮助您轻松管理个人基金投资组合，实现投资收益可视化。
+A lightweight and efficient fund investment management system that helps you track your mutual fund portfolio and visualize investment returns.
 
-## 核心功能
+## Features
 
-- 交易管理
-  - 一键记录买入/卖出交易
-  - 智能计算交易费用
-  - 完整的交易历史记录
-  
-- 持仓分析
-  - 实时持仓概览
-  - 收益率动态计算
-  - 净值自动更新
-  
-- 费率配置
-  - 灵活的买入费率设置
-  - 多档位赎回费率管理
-  - 费率模板快速应用
+- **Transaction Management**
+  - Record buy/sell transactions
+  - Auto-calculate fees
+  - Complete transaction history
 
-- 数据智能
-  - 基金信息自动获取
-  - 历史净值查询
-  - 实时净值更新
+- **Portfolio Analysis**
+  - Real-time holdings overview
+  - Dynamic return calculation
+  - Auto NAV updates
 
-## 技术架构
+- **Fee Management**
+  - Flexible purchase fee settings
+  - Multi-tier redemption fees
+  - Quick fee template application
 
-### 前端技术
-- Vue 3 - 渐进式 JavaScript 框架
-- Element Plus - 优雅的组件库
-- Axios - HTTP 请求工具
-- Vite - 下一代构建工具
+## Tech Stack
 
-### 后端技术
-- Python - 简洁优雅的编程语言
-- Flask - 轻量级 Web 框架
-- SQLite - 零配置数据库
-- Flask-CORS - 跨域资源共享
+### Frontend
+- Vue 3
+- Element Plus
+- Axios
+- Vite
 
-## 开始使用
+### Backend
+- Python
+- Flask
+- SQLite
+- Flask-CORS
 
-### 运行环境
+## Getting Started
 
+### Prerequisites
 - Node.js >= 12.0.0
 - Python >= 3.7
-- pip 包管理器
+- pip package manager
 
+### Installation
 
+1. Clone the repository
+
+```bash
+git clone https://github.com/awmthink/FundTracker.git
+cd FundTracker
+```
+
+2. Install frontend dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+3. Install backend dependencies
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+4. Initialize database
+
+```bash
+python init_db.py
+```
+
+### Running the Application
+
+1. Start backend server
+
+```bash
+cd backend
+python app.py
+```
+
+2. Start frontend development server
+
+```bash
+cd frontend
+npm run dev
+```
+
+3. Access the application at `http://localhost:5173`
+
+## License
+
+MIT License
