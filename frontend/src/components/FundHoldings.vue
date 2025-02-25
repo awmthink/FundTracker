@@ -16,6 +16,30 @@
       </div>
     </div>
 
+    <!-- 添加汇总信息卡片 -->
+    <div class="summary-cards">
+      <el-card class="summary-card">
+        <div class="summary-title">持有总市值</div>
+        <div class="summary-value">¥ {{ formatCurrency(totalMarketValue) }}</div>
+      </el-card>
+      <el-card class="summary-card">
+        <div class="summary-title">总投入</div>
+        <div class="summary-value">¥ {{ formatCurrency(totalInvestment) }}</div>
+      </el-card>
+      <el-card class="summary-card">
+        <div class="summary-title">持有收益</div>
+        <div class="summary-value" :class="getProfitClass(totalHoldingProfit)">
+          ¥ {{ formatCurrency(totalHoldingProfit) }}
+        </div>
+      </el-card>
+      <el-card class="summary-card">
+        <div class="summary-title">累计收益</div>
+        <div class="summary-value" :class="getProfitClass(totalProfit)">
+          ¥ {{ formatCurrency(totalProfit) }}
+        </div>
+      </el-card>
+    </div>
+
     <div class="holdings-grid">
       <el-card v-for="holding in holdings" :key="holding.fund_code" class="holding-card">
         <div class="holding-header">
@@ -37,7 +61,7 @@
           <div class="detail-row">
             <div class="detail-item">
               <div class="label">持有份额</div>
-              <div class="value">{{ formatNumber(holding.total_shares) }}</div>
+              <div class="value">{{ formatCurrency(holding.total_shares) }}</div>
             </div>
             <div class="detail-item">
               <div class="label">最新净值</div>
@@ -52,19 +76,19 @@
             </div>
             <div class="detail-item">
               <div class="label">持仓成本</div>
-              <div class="value">{{ formatNumber(holding.cost_amount) }}</div>
+              <div class="value">¥ {{ formatCurrency(holding.cost_amount) }}</div>
             </div>
           </div>
 
           <div class="detail-row">
             <div class="detail-item">
               <div class="label">持仓市值</div>
-              <div class="value">{{ formatNumber(holding.market_value) }}</div>
+              <div class="value">¥ {{ formatCurrency(holding.market_value) }}</div>
             </div>
             <div class="detail-item">
               <div class="label">持有收益</div>
               <div class="value" :class="getProfitClass(holding.holding_profit)">
-                {{ formatNumber(holding.holding_profit) }}
+                ¥ {{ formatCurrency(holding.holding_profit) }}
               </div>
             </div>
           </div>
@@ -79,7 +103,7 @@
             <div class="detail-item">
               <div class="label">累计收益</div>
               <div class="value" :class="getProfitClass(holding.total_profit)">
-                {{ formatNumber(holding.total_profit) }}
+                ¥ {{ formatCurrency(holding.total_profit) }}
               </div>
             </div>
           </div>
@@ -100,7 +124,11 @@ export default {
       holdings: [],
       updating: false,
       loading: false,
-      lastUpdateTime: null
+      lastUpdateTime: null,
+      totalInvestment: 0,
+      totalMarketValue: 0,
+      totalHoldingProfit: 0,
+      totalProfit: 0
     }
   },
   methods: {
@@ -116,6 +144,10 @@ export default {
             }))
             .sort((a, b) => b.market_value - a.market_value)
           this.lastUpdateTime = new Date()
+          this.totalInvestment = response.data.data.reduce((total, holding) => total + holding.cost_amount, 0)
+          this.totalMarketValue = response.data.data.reduce((total, holding) => total + holding.market_value, 0)
+          this.totalHoldingProfit = response.data.data.reduce((total, holding) => total + holding.holding_profit, 0)
+          this.totalProfit = response.data.data.reduce((total, holding) => total + holding.total_profit, 0)
         }
       } catch (error) {
         ElMessage.error('加载持仓信息失败')
@@ -161,6 +193,14 @@ export default {
     formatNumber(num, decimals = 2) {
       if (num === null || num === undefined) return '--'
       return Number(num).toFixed(decimals)
+    },
+
+    formatCurrency(num) {
+      if (num === null || num === undefined) return '--'
+      return Number(num).toLocaleString('zh-CN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })
     },
 
     formatDateTime(datetime) {
@@ -209,6 +249,36 @@ export default {
 .last-update-time {
   color: var(--text-color-secondary);
   font-size: 14px;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.summary-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+  transition: all 0.3s;
+}
+
+.summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.summary-title {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+  margin-bottom: 8px;
+}
+
+.summary-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--text-color);
 }
 
 .holdings-grid {
@@ -297,6 +367,10 @@ export default {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .summary-cards {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>
