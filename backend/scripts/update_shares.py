@@ -12,7 +12,7 @@ def get_fund_fees(cursor, fund_code):
     """获取基金费率设置"""
     cursor.execute('''
         SELECT buy_fee, sell_fee_lt7, sell_fee_lt365, sell_fee_gt365
-        FROM fund_settings
+        FROM funds
         WHERE fund_code = ?
     ''', (fund_code,))
     result = cursor.fetchone()

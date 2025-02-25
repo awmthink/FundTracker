@@ -336,41 +336,25 @@ class FundService:
         finally:
             conn.close()
 
-    def get_fund_settings(self):
-        """获取所有基金设置"""
-        conn = self.get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT fund_code, fund_name, buy_fee, sell_fee_short, 
-                       sell_fee_long, created_at, updated_at 
-                FROM fund_settings
-                ORDER BY created_at DESC
-            ''')
-            settings = cursor.fetchall()
-            return [{
-                'fund_code': row['fund_code'],
-                'fund_name': row['fund_name'],
-                'buy_fee': float(row['buy_fee']),
-                'sell_fee_short': float(row['sell_fee_short']),
-                'sell_fee_long': float(row['sell_fee_long']),
-                'created_at': row['created_at'],
-                'updated_at': row['updated_at']
-            } for row in settings]
-        finally:
-            conn.close()
-
     def save_fund_settings(self, fund_data):
         """保存基金费率设置"""
         conn = self.get_db_connection()
         try:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO fund_settings (
+                INSERT INTO funds (
                     fund_code, fund_name, buy_fee, 
                     sell_fee_lt7, sell_fee_lt365, sell_fee_gt365,
+                    current_nav, last_update_time,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, CURRENT_TIMESTAMP)
+                ON CONFLICT(fund_code) DO UPDATE SET
+                    fund_name = excluded.fund_name,
+                    buy_fee = excluded.buy_fee,
+                    sell_fee_lt7 = excluded.sell_fee_lt7,
+                    sell_fee_lt365 = excluded.sell_fee_lt365,
+                    sell_fee_gt365 = excluded.sell_fee_gt365,
+                    updated_at = CURRENT_TIMESTAMP
             ''', (
                 fund_data['fund_code'],
                 fund_data['fund_name'],
@@ -392,7 +376,7 @@ class FundService:
         conn = self.get_db_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM fund_settings WHERE fund_code = ?', 
+            cursor.execute('DELETE FROM funds WHERE fund_code = ?', 
                          (fund_code,))
             conn.commit()
         finally:
@@ -405,7 +389,7 @@ class FundService:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT buy_fee, sell_fee_lt7, sell_fee_lt365, sell_fee_gt365 
-                FROM fund_settings 
+                FROM funds
                 WHERE fund_code = ?
             ''', (fund_code,))
             row = cursor.fetchone()
@@ -419,6 +403,7 @@ class FundService:
             return None
         finally:
             conn.close()
+
 
     def update_all_navs(self):
         """更新所有基金的最新净值"""

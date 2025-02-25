@@ -195,9 +195,10 @@ export default {
       try {
         const response = await fundApi.getAllFundSettings();
         if (response.data.status === 'success') {
-          // 转换费率为百分比
+          // 转换费率为百分比，只获取需要的字段
           this.funds = response.data.data.map(fund => ({
-            ...fund,
+            fund_code: fund.fund_code,
+            fund_name: fund.fund_name,
             buy_fee: (fund.buy_fee * 100).toFixed(4),
             sell_fee_lt7: (fund.sell_fee_lt7 * 100).toFixed(4),
             sell_fee_lt365: (fund.sell_fee_lt365 * 100).toFixed(4),

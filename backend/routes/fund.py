@@ -64,7 +64,7 @@ def get_fund_nav(fund_code):
         print("Querying database...")  # 添加数据库查询日志
         cursor.execute('''
             SELECT fund_code, fund_name
-            FROM fund_settings
+            FROM funds
             WHERE fund_code = ?
         ''', (fund_code,))
         fund = cursor.fetchone()
@@ -160,36 +160,31 @@ def get_historical_nav(fund_code, date):
 
 @fund_bp.route('/settings', methods=['GET'])
 def get_all_fund_settings():
-    """获取所有基金的费率设置"""
+    """获取所有基金设置"""
     try:
         cursor = fund_service.get_db_connection().cursor()
         cursor.execute('''
             SELECT fund_code, fund_name, buy_fee, 
                    sell_fee_lt7, sell_fee_lt365, sell_fee_gt365
-            FROM fund_settings
+            FROM funds
+            ORDER BY fund_code
         ''')
         settings = cursor.fetchall()
-        
-        result = []
-        for row in settings:
-            result.append({
+        return jsonify({
+            'status': 'success',
+            'data': [{
                 'fund_code': row['fund_code'],
                 'fund_name': row['fund_name'],
                 'buy_fee': float(row['buy_fee']),
                 'sell_fee_lt7': float(row['sell_fee_lt7']),
                 'sell_fee_lt365': float(row['sell_fee_lt365']),
                 'sell_fee_gt365': float(row['sell_fee_gt365'])
-            })
-        
-        return jsonify({
-            'status': 'success',
-            'data': result
+            } for row in settings]
         })
     except Exception as e:
-        print(f"获取基金设置失败: {str(e)}")  # 添加服务器端日志
         return jsonify({
             'status': 'error',
-            'message': f'获取基金设置失败: {str(e)}'
+            'message': str(e)
         }), 500
 
 @fund_bp.route('/settings', methods=['POST'])
