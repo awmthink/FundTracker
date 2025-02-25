@@ -132,36 +132,12 @@ class FundService:
         try:
             # 数据验证
             required_fields = ['fund_code', 'fund_name', 'transaction_type', 
-                             'amount', 'nav', 'transaction_date']
+                             'amount', 'nav', 'fee', 'shares', 'transaction_date']
             for field in required_fields:
                 if field not in data:
                     return {
                         'status': 'error',
                         'message': f'缺少必需字段: {field}'
-                    }
-            
-            # 如果是卖出交易，验证是否有足够的份额
-            if data['transaction_type'] == 'sell':
-                cursor.execute('''
-                    SELECT COALESCE(
-                        SUM(CASE 
-                            WHEN transaction_type = 'buy' THEN shares 
-                            WHEN transaction_type = 'sell' THEN -shares 
-                            ELSE 0 
-                        END), 0) as available_shares
-                    FROM fund_transactions ft
-                    JOIN funds f ON ft.fund_id = f.fund_id
-                    WHERE f.fund_code = ?
-                    AND transaction_date <= ?
-                ''', (data['fund_code'], data['transaction_date']))
-                
-                available_shares = cursor.fetchone()[0]
-                sell_shares = float(data['amount']) / float(data['nav'])
-                
-                if sell_shares > available_shares:
-                    return {
-                        'status': 'error',
-                        'message': f'可用份额不足。当前可用: {available_shares:.2f}, 尝试卖出: {sell_shares:.2f}'
                     }
             
             # 检查基金是否存在，不存在则添加
@@ -175,48 +151,48 @@ class FundService:
                           (data['fund_code'],))
             fund_id = cursor.fetchone()[0]
             
-            # 计算手续费
+            # 处理数值
+            amount = float(data['amount'])
+            nav = float(data['nav'])
+            fee = float(data['fee'])
+            shares = float(data['shares'])
+            
             if data['transaction_type'] == 'sell':
-                fee = self.calculate_sell_fee(
-                    data['fund_code'],
-                    float(data['amount']),
-                    data['transaction_date']
-                )
-            else:
-                fund_settings = self.get_fund_fees(data['fund_code'])
-                if not fund_settings:
+                # 赎回时：
+                # - shares 是赎回份额（等于前端传来的 amount）
+                # - fee 是用户输入的手续费
+                # - amount 计算为实际的交易金额，实际到账金额为 amount - fee
+                amount = shares * nav 
+            else:  # 买入
+                # 申购时：
+                # - amount 是申购金额
+                # - fee 是计算的手续费
+                # - shares 是计算的份额
+                # 验证前端计算的份额是否正确
+                expected_shares = (amount - fee) / nav
+                if abs(expected_shares - shares) > 0.01:  # 允许0.01的误差
                     return {
                         'status': 'error',
-                        'message': '未找到基金费率设置'
+                        'message': '份额计算不匹配'
                     }
-                fee = float(data['amount']) * fund_settings['buy_fee']
-            
-            # 计算份额
-            shares = float(data['amount']) / float(data['nav'])
             
             # 添加交易记录
             cursor.execute('''
                 INSERT INTO fund_transactions 
                 (fund_id, transaction_type, amount, nav, fee, transaction_date, shares)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (fund_id, data['transaction_type'], data['amount'], data['nav'],
+            ''', (fund_id, data['transaction_type'], amount, nav,
                   fee, data['transaction_date'], shares))
-            
-            # 更新基金当前净值
-            cursor.execute('''
-                UPDATE funds 
-                SET current_nav = ?, last_update_time = CURRENT_TIMESTAMP
-                WHERE fund_id = ?
-            ''', (data['nav'], fund_id))
             
             conn.commit()
             return {
                 'status': 'success',
                 'message': '交易添加成功'
             }
+            
         except Exception as e:
             conn.rollback()
-            print(f"添加交易失败: {str(e)}")  # 添加错误日志
+            print(f"添加交易失败: {str(e)}")
             return {
                 'status': 'error',
                 'message': f'添加交易失败: {str(e)}'
@@ -267,8 +243,7 @@ class FundService:
                         'current_nav': row[2],
                         'total_shares': 0,
                         'total_cost': 0,
-                        'realized_profit': 0,  # 已实现收益
-                        'total_investment': 0  # 总投入
+                        'realized_profit': 0  # 已实现收益
                     }
                 
                 fund = holdings[fund_code]
@@ -280,8 +255,7 @@ class FundService:
                 if transaction_type == 'buy':
                     # 买入时更新总份额和总成本
                     fund['total_shares'] += shares
-                    fund['total_cost'] += (amount + fee)
-                    fund['total_investment'] += (amount + fee)
+                    fund['total_cost'] += amount
                     
                 elif transaction_type == 'sell':
                     # 卖出时，使用当前平均成本计算已实现收益
@@ -446,93 +420,6 @@ class FundService:
         finally:
             conn.close()
 
-    def calculate_sell_fee(self, fund_code, amount, transaction_date):
-        """计算赎回费用，按FIFO原则分别计算每笔买入对应的赎回费用"""
-        conn = self.get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # 获取基金费率设置
-            cursor.execute('''
-                SELECT sell_fee_lt7, sell_fee_lt365, sell_fee_gt365
-                FROM fund_settings
-                WHERE fund_code = ?
-            ''', (fund_code,))
-            
-            fee_settings = cursor.fetchone()
-            if not fee_settings:
-                raise Exception('未找到基金费率设置')
-            
-            # 获取基金ID
-            cursor.execute('SELECT fund_id FROM funds WHERE fund_code = ?', (fund_code,))
-            fund_id = cursor.fetchone()[0]
-            
-            # 获取所有未售出的买入记录（按日期排序）
-            cursor.execute('''
-                SELECT 
-                    t.transaction_date,
-                    t.shares as original_shares,
-                    COALESCE(
-                        (SELECT SUM(st.shares) 
-                         FROM fund_transactions st 
-                         WHERE st.transaction_type = 'sell'
-                         AND st.reference_buy_id = t.transaction_id), 
-                        0
-                    ) as sold_shares,
-                    t.nav as buy_nav
-                FROM fund_transactions t
-                WHERE t.fund_id = ?
-                AND t.transaction_type = 'buy'
-                ORDER BY t.transaction_date ASC
-            ''', (fund_id,))
-            
-            buy_records = cursor.fetchall()
-            
-            # 计算需要卖出的份额
-            shares_to_sell = amount / float(data['nav'])
-            total_fee = 0
-            remaining_to_sell = shares_to_sell
-            
-            sell_date = datetime.strptime(transaction_date, '%Y-%m-%d')
-            
-            for record in buy_records:
-                buy_date = datetime.strptime(record['transaction_date'], '%Y-%m-%d')
-                available_shares = record['original_shares'] - record['sold_shares']
-                
-                if available_shares <= 0:
-                    continue
-                    
-                # 计算这笔买入记录可以卖出的份额
-                shares_from_this_buy = min(remaining_to_sell, available_shares)
-                if shares_from_this_buy <= 0:
-                    break
-                    
-                # 计算持有天数
-                hold_days = (sell_date - buy_date).days
-                
-                # 确定费率
-                if hold_days < 7:
-                    fee_rate = fee_settings['sell_fee_lt7']
-                elif hold_days < 365:
-                    fee_rate = fee_settings['sell_fee_lt365']
-                else:
-                    fee_rate = fee_settings['sell_fee_gt365']
-                
-                # 计算这部分份额对应的金额和费用
-                amount_for_this_portion = shares_from_this_buy * float(data['nav'])
-                fee_for_this_portion = amount_for_this_portion * fee_rate
-                
-                total_fee += fee_for_this_portion
-                remaining_to_sell -= shares_from_this_buy
-                
-                if remaining_to_sell <= 0:
-                    break
-            
-            return total_fee
-            
-        finally:
-            conn.close()
-
     def update_all_navs(self):
         """更新所有基金的最新净值"""
         try:
@@ -672,11 +559,7 @@ class FundService:
             
             # 计算手续费
             if data['transaction_type'] == 'sell':
-                fee = self.calculate_sell_fee(
-                    data['fund_code'],
-                    amount,
-                    data['transaction_date']
-                )
+                fee = float(data.get('fee', 0))  # 使用用户输入的手续费
             else:
                 fund_settings = self.get_fund_fees(data['fund_code'])
                 if not fund_settings:

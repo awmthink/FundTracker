@@ -5,6 +5,7 @@
       v-model="dialogVisible"
       width="600px"
       :close-on-click-modal="false"
+      custom-class="fund-form-dialog"
     >
       <el-form 
         ref="formRef"
@@ -43,14 +44,13 @@
 
         <!-- 交易类型 -->
         <el-form-item label="交易类型" prop="transaction_type">
-          <el-select 
+          <el-radio-group 
             v-model="transaction.transaction_type"
-            style="width: 100%"
             @change="calculateFee"
           >
-            <el-option label="买入" value="buy" />
-            <el-option label="卖出" value="sell" />
-          </el-select>
+            <el-radio-button label="buy">申购</el-radio-button>
+            <el-radio-button label="sell">赎回</el-radio-button>
+          </el-radio-group>
         </el-form-item>
 
         <!-- 交易日期 -->
@@ -64,12 +64,15 @@
           />
         </el-form-item>
 
-        <!-- 交易金额 -->
-        <el-form-item label="交易金额" prop="amount">
-          <el-input-number
+        <!-- 交易金额/份额 -->
+        <el-form-item 
+          :label="transaction.transaction_type === 'buy' ? '申购金额' : '赎回份额'" 
+          prop="amount"
+        >
+          <el-input-number 
             v-model="transaction.amount"
             :precision="2"
-            :step="100"
+            :step="1"
             :min="0"
             style="width: 100%"
             @change="calculateFee"
@@ -88,8 +91,8 @@
           />
         </el-form-item>
 
-        <!-- 手续费率 -->
-        <el-form-item label="手续费率 (%)">
+        <!-- 手续费率 - 仅在申购时显示 -->
+        <el-form-item label="手续费率 (%)" v-if="transaction.transaction_type === 'buy'">
           <el-input-number
             v-model="displayFeeRate"
             :precision="2"
@@ -101,19 +104,19 @@
         </el-form-item>
 
         <!-- 手续费 -->
-        <el-form-item label="手续费">
+        <el-form-item label="手续费" prop="fee" v-if="transaction.transaction_type === 'sell'">
           <el-input-number
             v-model="transaction.fee"
             :precision="2"
             :step="0.01"
             :min="0"
             style="width: 100%"
-            disabled
+            @change="calculateAmount"
           />
         </el-form-item>
 
-        <!-- 预计份额 -->
-        <el-form-item label="预计份额">
+        <!-- 预计份额 - 仅在申购时显示 -->
+        <el-form-item label="预计份额" v-if="transaction.transaction_type === 'buy'">
           <el-input-number
             v-model="transaction.shares"
             :precision="2"
@@ -123,6 +126,16 @@
             disabled
           />
         </el-form-item>
+
+        <!-- 到账金额 -->
+        <el-form-item label="到账金额" v-if="transaction.transaction_type === 'sell'">
+          <el-input-number
+            v-model="transaction.final_amount"
+            :precision="2"
+            disabled
+            style="width: 100%"
+          />
+        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -130,7 +143,7 @@
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button 
             type="primary" 
-            @click="submitTransaction"
+            @click="submitForm"
             :disabled="!isFormValid"
           >
             提交
@@ -197,6 +210,7 @@ export default {
         nav: 0,
         fee: 0,
         shares: 0,
+        final_amount: 0,
         transaction_date: new Date().toISOString().split('T')[0]
       }
     },
@@ -250,72 +264,128 @@ export default {
     calculateFee() {
       if (!this.fundSettings || !this.transaction.amount) return
 
-      const amount = parseFloat(this.transaction.amount)
-      let feeRate = 0
-
       if (this.transaction.transaction_type === 'buy') {
-        feeRate = this.fundSettings.buy_fee
-      } else {
-        // 这里可以根据实际需求判断是使用短期还是长期费率
-        feeRate = this.fundSettings.sell_fee_short
-      }
+        const amount = parseFloat(this.transaction.amount)
+        const feeRate = this.fundSettings.buy_fee
+        this.displayFeeRate = (feeRate * 100).toFixed(2)
+        this.transaction.fee = amount * feeRate
 
-      this.displayFeeRate = (feeRate * 100).toFixed(2)
-      this.transaction.fee = amount * feeRate
-
-      if (this.transaction.nav > 0) {
-        if (this.transaction.transaction_type === 'buy') {
+        if (this.transaction.nav > 0) {
           // 买入份额 = (金额 - 手续费) / 净值
           this.transaction.shares = (amount - this.transaction.fee) / this.transaction.nav
-        } else {
-          // 卖出份额 = 金额 / 净值
-          this.transaction.shares = amount / this.transaction.nav
+          this.transaction.shares = parseFloat(this.transaction.shares.toFixed(2))
         }
-        // 保留小数点后两位
-        this.transaction.shares = parseFloat(this.transaction.shares.toFixed(2))
+      } else {
+        // 卖出时，amount代表份额
+        if (this.transaction.nav > 0) {
+          // 计算卖出总金额
+          const totalAmount = this.transaction.amount * this.transaction.nav
+          // 计算到账金额
+          this.transaction.final_amount = totalAmount - this.transaction.fee
+        }
       }
     },
-    async submitTransaction() {
-      if (!this.isFormValid) return
-
+    calculateAmount() {
+      if (this.transaction.transaction_type === 'sell' && this.transaction.nav > 0) {
+        // 计算卖出总金额
+        const totalAmount = this.transaction.amount * this.transaction.nav
+        // 计算到账金额
+        this.transaction.final_amount = totalAmount - this.transaction.fee
+      }
+    },
+    async submitForm() {
       try {
-        await fundApi.addTransaction(this.transaction)
-        this.$message.success('交易添加成功')
-        this.dialogVisible = false
-        this.$emit('transaction-added')
-        this.transaction = this.getEmptyTransaction()
+        const formData = {
+          fund_code: this.transaction.fund_code,
+          fund_name: this.transaction.fund_name,
+          transaction_type: this.transaction.transaction_type,
+          nav: this.transaction.nav,
+          transaction_date: this.transaction.transaction_date,
+          // 买入时提交申购金额，卖出时提交赎回份额
+          amount: this.transaction.amount,
+          // 买入时计算的手续费，卖出时用户输入的手续费
+          fee: this.transaction.fee,
+          // 买入时计算的份额，卖出时就是赎回份额
+          shares: this.transaction.transaction_type === 'buy' 
+            ? this.transaction.shares 
+            : this.transaction.amount
+        }
+
+        const response = await fundApi.addTransaction(formData)
+        if (response.data.status === 'success') {
+          this.$message.success('交易添加成功')
+          this.dialogVisible = false
+          this.$emit('transaction-added')
+          this.resetForm()
+        }
       } catch (error) {
         this.$message.error('添加交易失败')
       }
+    },
+    resetForm() {
+      this.transaction = this.getEmptyTransaction()
     }
   }
 }
 </script>
 
 <style scoped>
-.el-dialog {
-  border-radius: 8px;
+.fund-form-dialog {
+  --section-padding: 20px;
 }
 
-.el-form {
-  padding: 20px;
+:deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+:deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+:deep(.el-input.is-disabled .el-input__inner) {
+  color: var(--text-color);
+  -webkit-text-fill-color: var(--text-color);
+}
+
+:deep(.el-radio-button__inner) {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:deep(.el-radio-button__orig-radio:checked + .el-radio-button__inner) {
+  color: #fff;
+}
+
+:deep(.el-input-number.is-disabled .el-input__inner) {
+  color: var(--text-color);
+  -webkit-text-fill-color: var(--text-color);
+}
+
+/* 优化获取信息按钮样式 */
+:deep(.el-input-group__append) {
+  background-color: var(--el-button-bg-color);
+  border-color: var(--el-border-color);
+}
+
+:deep(.el-input-group__append .el-button) {
+  border: none;
+  margin: 0;
+  background: transparent;
+  color: var(--el-text-color-regular);
+}
+
+:deep(.el-input-group__append .el-button:hover) {
+  color: var(--el-color-primary);
+  background: transparent;
+}
+
+:deep(.el-input-group__append .el-button.is-loading) {
+  background: transparent;
 }
 
 .dialog-footer {
   text-align: right;
-  padding: 0 20px 20px;
-}
-
-:deep(.el-input-number) {
-  width: 100%;
-}
-
-:deep(.el-form-item__label) {
-  font-weight: 500;
-}
-
-:deep(.el-input.is-disabled .el-input__inner) {
-  color: #606266;
-  background-color: #f5f7fa;
+  margin-top: 20px;
 }
 </style>
