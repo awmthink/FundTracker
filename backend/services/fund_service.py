@@ -563,7 +563,6 @@ class FundService:
                 conn.close()
 
     def get_transactions(self, filters=None):
-        """获取基金交易记录"""
         conn = self.get_db_connection()
         cursor = conn.cursor()
         
@@ -598,7 +597,8 @@ class FundService:
                 if filters.get('end_date'):
                     query += ' AND t.transaction_date <= ?'
                     params.append(filters['end_date'])
-                if filters.get('transaction_type'):
+                # 只在交易类型不为 'all' 时添加条件
+                if filters.get('transaction_type') and filters['transaction_type'] != 'all':
                     query += ' AND t.transaction_type = ?'
                     params.append(filters['transaction_type'])
             
