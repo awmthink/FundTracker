@@ -53,59 +53,22 @@ def test():
 
 @fund_bp.route('/nav/<fund_code>', methods=['GET'])
 def get_fund_nav(fund_code):
-    """获取基金信息"""
-    print(f"Received request for fund code: {fund_code}")  # 添加请求日志
-    
+    """获取基金净值和基本信息"""
     try:
-        # 首先尝试从数据库获取基金信息
-        conn = fund_service.get_db_connection()
-        cursor = conn.cursor()
+        # 使用整合后的方法获取基金信息
+        fund_info = fund_service.get_fund_info(fund_code)
         
-        print("Querying database...")  # 添加数据库查询日志
-        cursor.execute('''
-            SELECT fund_code, fund_name
-            FROM funds
-            WHERE fund_code = ?
-        ''', (fund_code,))
-        fund = cursor.fetchone()
-        
-        if fund:
-            print(f"Found fund in database: {fund['fund_name']}")  # 添加数据库结果日志
-            return jsonify({
-                'status': 'success',
-                'data': {
-                    'code': fund['fund_code'],
-                    'name': fund['fund_name']
-                }
-            })
-            
-        print("Fund not found in database, fetching from network...")  # 添加网络请求日志
-        # 如果数据库中没有，则从天天基金网获取信息
-        fund_info = fund_service.fetch_fund_info(fund_code)
-        print(f"Network response: {fund_info}")  # 添加网络响应日志
-        
-        if fund_info:
-            return jsonify({
-                'status': 'success',
-                'data': fund_info
-            })
-            
+        # 即使没有完整信息，也返回已获取的部分信息
         return jsonify({
-            'status': 'error',
-            'message': '未找到该基金信息'
-        }), 404
-        
+            'status': 'success',
+            'data': fund_info
+        })
     except Exception as e:
-        import traceback
-        print(f"Error getting fund info: {str(e)}")  # 添加错误日志
-        print(traceback.format_exc())  # 添加堆栈跟踪
+        print(f"获取基金信息API错误: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': f'获取基金信息失败: {str(e)}'
         }), 500
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 @fund_bp.route('/historical-nav/<fund_code>/<date>', methods=['GET'])
 def get_historical_nav(fund_code, date):
@@ -164,7 +127,7 @@ def get_all_fund_settings():
     try:
         cursor = fund_service.get_db_connection().cursor()
         cursor.execute('''
-            SELECT fund_code, fund_name, buy_fee
+            SELECT fund_code, fund_name, buy_fee, fund_type
             FROM funds
             ORDER BY fund_code
         ''')
@@ -174,7 +137,8 @@ def get_all_fund_settings():
             'data': [{
                 'fund_code': row['fund_code'],
                 'fund_name': row['fund_name'],
-                'buy_fee': float(row['buy_fee'])
+                'buy_fee': float(row['buy_fee']),
+                'fund_type': row['fund_type']
             } for row in settings]
         })
     except Exception as e:

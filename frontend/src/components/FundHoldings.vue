@@ -40,6 +40,41 @@
       </el-card>
     </div>
 
+    <!-- 添加资产配置比例卡片 -->
+    <el-card class="asset-allocation-card">
+      <div class="card-header">
+        <div class="card-title">资产配置比例</div>
+      </div>
+      <div class="allocation-content">
+        <div class="allocation-item">
+          <div class="allocation-label">
+            <span class="allocation-color non-monetary"></span>
+            <span>权益类基金</span>
+          </div>
+          <div class="allocation-value">¥ {{ formatCurrency(nonMonetaryValue) }}</div>
+          <div class="allocation-percentage">{{ formatNumber(nonMonetaryPercentage) }}%</div>
+        </div>
+        <div class="allocation-item">
+          <div class="allocation-label">
+            <span class="allocation-color monetary"></span>
+            <span>货币类基金</span>
+          </div>
+          <div class="allocation-value">¥ {{ formatCurrency(monetaryValue) }}</div>
+          <div class="allocation-percentage">{{ formatNumber(monetaryPercentage) }}%</div>
+        </div>
+        <div class="allocation-progress">
+          <div 
+            class="non-monetary-progress" 
+            :style="{ width: `${nonMonetaryPercentage}%` }"
+          ></div>
+          <div 
+            class="monetary-progress" 
+            :style="{ width: `${monetaryPercentage}%` }"
+          ></div>
+        </div>
+      </div>
+    </el-card>
+
     <div class="holdings-grid">
       <el-card v-for="holding in holdings" :key="holding.fund_code" class="holding-card">
         <div class="holding-header">
@@ -120,7 +155,11 @@ export default {
       totalInvestment: 0,
       totalMarketValue: 0,
       totalHoldingProfit: 0,
-      totalProfit: 0
+      totalProfit: 0,
+      monetaryValue: 0,
+      nonMonetaryValue: 0,
+      monetaryPercentage: 0,
+      nonMonetaryPercentage: 0
     }
   },
   methods: {
@@ -140,6 +179,22 @@ export default {
           this.totalMarketValue = response.data.data.reduce((total, holding) => total + holding.market_value, 0)
           this.totalHoldingProfit = response.data.data.reduce((total, holding) => total + holding.holding_profit, 0)
           this.totalProfit = response.data.data.reduce((total, holding) => total + holding.total_profit, 0)
+          
+          // 计算货币类和非货币类基金市值
+          this.monetaryValue = response.data.data
+            .filter(holding => holding.fund_type && holding.fund_type.includes('货币'))
+            .reduce((total, holding) => total + holding.market_value, 0)
+          
+          this.nonMonetaryValue = this.totalMarketValue - this.monetaryValue
+          
+          // 计算百分比
+          this.monetaryPercentage = this.totalMarketValue > 0 
+            ? (this.monetaryValue / this.totalMarketValue * 100) 
+            : 0
+          
+          this.nonMonetaryPercentage = this.totalMarketValue > 0 
+            ? (this.nonMonetaryValue / this.totalMarketValue * 100) 
+            : 0
         }
       } catch (error) {
         ElMessage.error('加载持仓信息失败')
@@ -273,6 +328,108 @@ export default {
   color: var(--text-color);
 }
 
+.asset-allocation-card {
+  margin-bottom: 30px;
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+.card-header {
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--text-color);
+}
+
+.allocation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.allocation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border-color, rgba(0, 0, 0, 0.06));
+}
+
+.allocation-item:last-child {
+  border-bottom: none;
+  margin-bottom: 8px;
+}
+
+.allocation-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.allocation-color {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.allocation-color.non-monetary {
+  background-color: #409EFF;
+}
+
+.allocation-color.monetary {
+  background-color: #67C23A;
+}
+
+.allocation-value {
+  color: var(--text-color);
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+  text-align: right;
+  padding-right: 16px;
+}
+
+.allocation-percentage {
+  color: var(--text-color);
+  font-weight: bold;
+  font-size: 15px;
+  width: 70px;
+  text-align: right;
+  background-color: var(--bg-color-light, rgba(0, 0, 0, 0.03));
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* 添加暗色模式下的特定样式 */
+.dark-theme .allocation-percentage {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.allocation-progress {
+  height: 8px;
+  width: 100%;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+
+.non-monetary-progress {
+  height: 100%;
+  background-color: #409EFF;
+}
+
+.monetary-progress {
+  height: 100%;
+  background-color: #67C23A;
+}
+
 .holdings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -363,6 +520,10 @@ export default {
 
   .summary-cards {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .asset-allocation-card {
+    margin-bottom: 20px;
   }
 }
 </style>

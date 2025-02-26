@@ -5,6 +5,7 @@ CREATE TABLE funds (
     current_nav REAL DEFAULT 0,
     last_update_time DATETIME,
     buy_fee REAL DEFAULT 0,
+    fund_type TEXT,  -- 新增字段：基金类型
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

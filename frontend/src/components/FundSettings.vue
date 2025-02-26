@@ -3,7 +3,7 @@
     <el-dialog
       title="基金设置"
       v-model="dialogVisible"
-      width="800px"
+      width="960px"
       :close-on-click-modal="false"
       :destroy-on-close="true"
     >
@@ -24,7 +24,13 @@
           <el-table-column 
             prop="fund_name" 
             label="基金名称" 
-            min-width="250" 
+            min-width="200" 
+            align="center"
+          />
+          <el-table-column 
+            prop="fund_type" 
+            label="基金类型" 
+            min-width="150" 
             align="center"
           />
           <el-table-column 
@@ -87,6 +93,15 @@
             </el-input>
           </el-form-item>
           
+          <el-form-item label="基金类型" prop="fund_type">
+            <el-input 
+              v-model="currentFund.fund_type" 
+              style="width: 300px"
+              disabled
+              placeholder="基金类型将自动获取"
+            />
+          </el-form-item>
+          
           <el-form-item label="买入费率(%)" prop="buy_fee">
             <el-input-number
               v-model="currentFund.buy_fee"
@@ -120,6 +135,7 @@ export default {
       currentFund: {
         fund_code: '',
         fund_name: '',
+        fund_type: '',
         buy_fee: 0,
       },
       isEditing: false,
@@ -149,6 +165,7 @@ export default {
           this.funds = response.data.data.map(fund => ({
             fund_code: fund.fund_code,
             fund_name: fund.fund_name,
+            fund_type: fund.fund_type || '未知',
             buy_fee: (fund.buy_fee * 100).toFixed(4)
           }));
         } else {
@@ -172,6 +189,7 @@ export default {
         const response = await fundApi.getFundNav(this.currentFund.fund_code)
         if (response.data.status === 'success') {
           this.currentFund.fund_name = response.data.data.name
+          this.currentFund.fund_type = response.data.data.fund_type || '未知'
         }
       } catch (error) {
         this.$message.error('获取基金信息失败')
@@ -182,10 +200,10 @@ export default {
       this.currentFund = {
         fund_code: fund.fund_code,
         fund_name: fund.fund_name,
+        fund_type: fund.fund_type || '',
         buy_fee: parseFloat(fund.buy_fee)
       };
     },
-    // 在 FundSettings.vue 中修改删除处理方法
     async handleDelete(fund) {
       try {
         await this.$confirm(
@@ -236,6 +254,7 @@ export default {
       this.currentFund = {
         fund_code: '',
         fund_name: '',
+        fund_type: '',
         buy_fee: 0,
       };
       if (this.$refs.fundForm) {
@@ -256,15 +275,18 @@ export default {
       try {
         const response = await fundApi.getFundNav(fundCode);
         if (response.data.status === 'success') {
-          this.currentFund.fund_name = response.data.data.name;
+          if (response.data.data.name) {
+            this.currentFund.fund_name = response.data.data.name;
+          } else {
+            this.$message.warning('未能获取到基金名称，请手动输入');
+          }
+          this.currentFund.fund_type = response.data.data.fund_type || '未知';
         } else {
-          this.$message.warning('未找到该基金信息');
-          this.currentFund.fund_name = '';
+          this.$message.warning('未找到该基金信息，请确认基金代码是否正确');
         }
       } catch (error) {
         console.error('获取基金信息失败:', error);
-        this.$message.error('获取基金信息失败');
-        this.currentFund.fund_name = '';
+        this.$message.error('获取基金信息失败: ' + (error.response?.data?.message || error.message || '未知错误'));
       } finally {
         this.loadingFundInfo = false;
       }

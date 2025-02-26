@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 import requests
 import re
 import json
+import html
 from typing import Optional, Dict, Any
+import time
 
 class FundService:
     def __init__(self):
@@ -52,19 +54,43 @@ class FundService:
         return None
 
     def fetch_current_nav(self, fund_code: str) -> Optional[Dict[str, Any]]:
-        """获取基金当前净值"""
+        """获取基金当前净值，统一读取前1天的净值，如遇周末或公休假日则读取上一个工作日的净值"""
+        # 获取前一天日期
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # 尝试获取历史净值（前一天的）
+        historical_nav = self.get_historical_nav(fund_code, yesterday)
+        
+        # 如果获取到了历史净值，直接返回
+        if historical_nav:
+            return {
+                'nav': historical_nav,
+                'update_time': yesterday
+            }
+        
+        # 如果没有获取到前一天的净值（可能是周末或假日），尝试获取实时数据
         url = self.base_urls['current_nav'].format(fund_code)
         content = self._make_request(url)
         
         if not content or 'jsonpgz(' not in content:
+            # 如果实时数据也获取失败，尝试获取最近5个工作日内的净值
+            for days_back in range(2, 6):  # 尝试往前2-5天
+                check_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                historical_nav = self.get_historical_nav(fund_code, check_date)
+                if historical_nav:
+                    return {
+                        'nav': historical_nav,
+                        'update_time': check_date
+                    }
             return None
-            
+        
         try:
             json_str = content.replace('jsonpgz(', '').replace(');', '')
             fund_data = json.loads(json_str)
             
-            nav = float(fund_data.get('gsz', 0)) or float(fund_data.get('dwjz', 0))
-            update_time = fund_data.get('jzrq')
+            # 优先使用单位净值(dwjz)，这通常是上一个工作日的净值
+            nav = float(fund_data.get('dwjz', 0))
+            update_time = fund_data.get('jzrq')  # 净值日期
             
             if nav and update_time:
                 self._update_fund_nav(fund_code, nav, update_time)
@@ -170,116 +196,137 @@ class FundService:
         finally:
             conn.close()
 
-    def get_holdings(self):
-        """获取基金持仓信息"""
-        conn = self.get_db_connection()
-        cursor = conn.cursor()
+    def get_holdings(self, cutoff_date=None):
+        """获取基金持仓信息
         
+        Args:
+            cutoff_date: 可选，截止日期，格式为YYYY-MM-DD，默认为None表示使用最新数据
+        """
+        conn = self.get_db_connection()
         try:
-            # 获取前一个工作日的日期
-            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-            if datetime.now().weekday() == 0:
-                yesterday = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
-            elif datetime.now().weekday() == 6:
-                yesterday = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-
-            # 首先获取所有基金的交易记录，按日期排序
-            cursor.execute('''
-                SELECT 
-                    f.fund_code,
-                    f.fund_name,
-                    f.current_nav,
-                    t.transaction_type,
-                    t.shares,
-                    t.amount,
-                    t.fee,
-                    t.transaction_date,
-                    t.nav as transaction_nav
+            cursor = conn.cursor()
+            
+            # 构建查询语句，根据是否有截止日期添加条件
+            query = '''
+                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time,
+                       t.transaction_type, t.amount, t.nav, t.shares, t.transaction_date
                 FROM funds f
-                JOIN fund_transactions t ON f.fund_code = t.fund_code
-                ORDER BY f.fund_code, t.transaction_date ASC
-            ''')
+                INNER JOIN fund_transactions t ON f.fund_code = t.fund_code
+            '''
+            
+            params = []
+            if cutoff_date:
+                query += ' WHERE t.transaction_date <= ?'
+                params.append(cutoff_date)
+                
+            query += ' ORDER BY f.fund_code, t.transaction_date'
+            
+            cursor.execute(query, params)
             
             transactions = cursor.fetchall()
             
-            # 按基金代码分组处理交易
-            holdings = {}
+            # 按基金代码分组
+            funds_data = {}
             for row in transactions:
-                fund_code = row[0]
-                if fund_code not in holdings:
-                    holdings[fund_code] = {
+                fund_code = row['fund_code']
+                if fund_code not in funds_data:
+                    funds_data[fund_code] = {
                         'fund_code': fund_code,
-                        'fund_name': row[1],
-                        'current_nav': row[2],
-                        'total_shares': 0,
-                        'total_cost': 0,
-                        'realized_profit': 0  # 已实现收益
+                        'fund_name': row['fund_name'],
+                        'current_nav': row['current_nav'] or 0,
+                        'last_update_time': row['last_update_time'],
+                        'fund_type': row['fund_type'] or '未知',
+                        'transactions': []
                     }
                 
-                fund = holdings[fund_code]
-                transaction_type = row[3]
-                shares = float(row[4])
-                amount = float(row[5])
-                fee = float(row[6])
+                funds_data[fund_code]['transactions'].append({
+                    'transaction_type': row['transaction_type'],
+                    'amount': row['amount'],
+                    'nav': row['nav'],
+                    'shares': row['shares'],
+                    'transaction_date': row['transaction_date']
+                })
+            
+            # 计算每个基金的持仓信息
+            holdings = []
+            for fund_code, fund_data in funds_data.items():
+                # 检查是否为货币型基金
+                is_money_fund = '货币' in (fund_data['fund_type'] or '')
                 
-                if transaction_type == 'buy':
-                    # 买入时更新总份额和总成本
-                    fund['total_shares'] += shares
-                    fund['total_cost'] += amount
+                total_buy_amount = 0
+                total_sell_amount = 0
+                total_shares = 0
+                total_cost = 0
+                total_profit = 0
+                
+                for tx in fund_data['transactions']:
+                    if tx['transaction_type'] == 'buy':
+                        total_buy_amount += tx['amount']
+                        if not is_money_fund:
+                            total_shares += tx['shares']
+                            total_cost += tx['amount']
+                    elif tx['transaction_type'] == 'sell':
+                        total_sell_amount += tx['amount']
+                        if not is_money_fund:
+                            # 计算当前的平均持仓净值
+                            avg_cost = total_cost / total_shares if total_shares > 0 else 0
+                            total_shares -= tx['shares']
+                            # 计算卖出收益
+                            sell_value = tx['shares'] * tx['nav'] # 卖出收益 = 卖出份额 * 当前的平均持仓净值
+                            sell_cost = tx['shares'] * avg_cost # 卖出金额
+                            total_profit += (sell_value - sell_cost) # 累积到总收益中 （这里忽略掉卖出时的手续费）
+                            total_cost -= sell_cost
+                
+                # 货币型基金特殊处理
+                if is_money_fund:
+                    # 持有市值等于总的买入-总的赎回
+                    market_value = total_buy_amount - total_sell_amount
                     
-                elif transaction_type == 'sell':
-                    # 卖出时，使用当前平均成本计算已实现收益
-                    if fund['total_shares'] > 0:
-                        avg_cost_per_share = fund['total_cost'] / fund['total_shares']
-                        sell_cost = shares * avg_cost_per_share
-                        sell_amount = amount - fee
-                        
-                        # 计算已实现收益
-                        realized_profit = sell_amount - sell_cost
-                        fund['realized_profit'] += realized_profit
-                        
-                        # 更新总份额和总成本
-                        fund['total_shares'] -= shares
-                        if fund['total_shares'] > 0:
-                            fund['total_cost'] = avg_cost_per_share * fund['total_shares']
-                        else:
-                            fund['total_cost'] = 0
-
-            # 计算最终持仓信息
-            result = []
-            for fund_code, fund in holdings.items():
-                if fund['total_shares'] > 0:  # 只显示有持仓的基金
-                    # 获取最新净值
-                    current_nav = self.get_historical_nav(fund_code, yesterday) or fund['current_nav']
-                    
-                    # 计算当前持仓成本
-                    current_cost = fund['total_cost']
-                    
-                    # 计算当前市值
-                    market_value = fund['total_shares'] * float(current_nav)
-                    
-                    # 计算持有收益和收益率
-                    holding_profit = market_value - current_cost
-                    holding_profit_rate = holding_profit / current_cost if current_cost > 0 else 0
-                    
-                    # 计算累计收益（包括已实现和未实现）
-                    total_profit = holding_profit + fund['realized_profit']
-                    
-                    result.append({
+                    # 货币基金特殊处理
+                    holding = {
                         'fund_code': fund_code,
-                        'fund_name': fund['fund_name'],
-                        'current_nav': float(current_nav),
-                        'total_shares': fund['total_shares'],
-                        'cost_amount': current_cost,
+                        'fund_name': fund_data['fund_name'],
+                        'fund_type': fund_data['fund_type'],
+                        'current_nav': 1.0,  # 货币基金净值固定为1
+                        'total_shares': market_value,  # 持有份额等于当前持有的市值
+                        'avg_cost_nav': 1.0,  # 平均持仓净值=最新持仓净值
+                        'cost_amount': market_value,  # 持仓成本=持有市值
+                        'market_value': market_value,
+                        'holding_profit': 0,  # 持有收益为0
+                        'holding_profit_rate': 0,  # 持有收益率为0
+                        'total_profit': 0,  # 累计收益为0
+                        'last_update_time': fund_data['last_update_time']
+                    }
+                else:
+                    # 非货币型基金正常计算
+                    # 获取最新净值，优先使用前一天的净值
+                    current_nav = fund_data['current_nav']
+                    
+                    market_value = total_shares * current_nav
+                    avg_cost_nav = total_cost / total_shares if total_shares > 0 else 0
+                    holding_profit = market_value - total_cost
+                    holding_profit_rate = holding_profit / total_cost if total_cost > 0 else 0
+                    
+                    holding = {
+                        'fund_code': fund_code,
+                        'fund_name': fund_data['fund_name'],
+                        'fund_type': fund_data['fund_type'],
+                        'current_nav': current_nav,
+                        'total_shares': total_shares,
+                        'avg_cost_nav': avg_cost_nav,
+                        'cost_amount': total_cost,
                         'market_value': market_value,
                         'holding_profit': holding_profit,
                         'holding_profit_rate': holding_profit_rate,
-                        'total_profit': total_profit,
-                        'avg_cost_nav': current_cost / fund['total_shares'] if fund['total_shares'] > 0 else 0
-                    })
+                        'total_profit': total_profit + holding_profit,
+                        'last_update_time': fund_data['last_update_time']
+                    }
+                
+                # 只添加有持仓的基金
+                if holding['market_value'] > 0:
+                    holdings.append(holding)
             
-            return result
-            
+            return holdings
         except Exception as e:
             print(f"获取持仓信息失败: {str(e)}")
             raise e
@@ -306,33 +353,54 @@ class FundService:
         finally:
             conn.close()
 
-    def save_fund_settings(self, fund_data):
-        """保存基金费率设置"""
-        conn = self.get_db_connection()
+    def save_fund_settings(self, data):
+        """保存基金设置"""
         try:
+            conn = self.get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO funds (
-                    fund_code, fund_name, buy_fee,
-                    current_nav, last_update_time,
-                    updated_at
-                ) VALUES (?, ?, ?, 0, NULL, CURRENT_TIMESTAMP)
-                ON CONFLICT(fund_code) DO UPDATE SET
-                    fund_name = excluded.fund_name,
-                    buy_fee = excluded.buy_fee,
-                    updated_at = CURRENT_TIMESTAMP
-            ''', (
-                fund_data['fund_code'],
-                fund_data['fund_name'],
-                fund_data['buy_fee']
-            ))
+            
+            # 检查基金是否已存在
+            cursor.execute(
+                "SELECT 1 FROM funds WHERE fund_code = ?", 
+                (data['fund_code'],)
+            )
+            exists = cursor.fetchone()
+            
+            if exists:
+                # 更新现有基金
+                cursor.execute(
+                    """
+                    UPDATE funds 
+                    SET fund_name = ?, buy_fee = ?, fund_type = ?, updated_at = CURRENT_TIMESTAMP 
+                    WHERE fund_code = ?
+                    """,
+                    (
+                        data['fund_name'], 
+                        data['buy_fee'],
+                        data.get('fund_type', '未知'),
+                        data['fund_code']
+                    )
+                )
+            else:
+                # 插入新基金
+                cursor.execute(
+                    """
+                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        data['fund_code'], 
+                        data['fund_name'], 
+                        data['buy_fee'],
+                        data.get('fund_type', '未知')
+                    )
+                )
+            
             conn.commit()
             return True
         except Exception as e:
-            print(f"保存基金设置失败: {str(e)}")
-            return False
-        finally:
-            conn.close()
+            conn.rollback()
+            raise e
 
     def check_fund_transactions(self, fund_code):
         conn = self.get_db_connection()
@@ -386,7 +454,7 @@ class FundService:
 
 
     def update_all_navs(self):
-        """更新所有基金的最新净值"""
+        """更新所有基金的最新净值（前一个工作日）"""
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
@@ -395,12 +463,31 @@ class FundService:
             cursor.execute('SELECT fund_code FROM funds')
             funds = cursor.fetchall()
             
+            # 获取前一天日期
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            
             updated_count = 0
             for fund in funds:
                 fund_code = fund['fund_code']
-                result = self.fetch_current_nav(fund_code)
-                if result:
+                
+                # 优先尝试获取前一天的历史净值
+                historical_nav = self.get_historical_nav(fund_code, yesterday)
+                
+                if historical_nav:
+                    # 更新数据库中的净值
+                    cursor.execute('''
+                        UPDATE funds 
+                        SET current_nav = ?,
+                            last_update_time = ?
+                        WHERE fund_code = ?
+                    ''', (historical_nav, yesterday, fund_code))
+                    conn.commit()
                     updated_count += 1
+                else:
+                    # 如果获取不到前一天的净值，尝试获取实时数据
+                    result = self.fetch_current_nav(fund_code)
+                    if result:
+                        updated_count += 1
             
             return {
                 'total': len(funds),
@@ -558,4 +645,144 @@ class FundService:
             print(f"更新交易记录失败: {str(e)}")  # 添加日志输出
             raise e
         finally:
-            conn.close() 
+            conn.close()
+
+    def get_fund_type(self, fund_code: str) -> Optional[str]:
+        """
+        获取基金类型信息
+        Args:
+            fund_code: 基金代码
+        Returns:
+            基金类型字符串，如果获取失败返回None
+        """
+        try:
+            # 尝试从天天基金网获取
+            for attempt in range(2):  # 最多尝试2次
+                try:
+                    # 使用天天基金网的API
+                    url = f"http://fund.eastmoney.com/{fund_code}.html"
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                    }
+                    response = requests.get(url, headers=headers, timeout=10)
+                    response.encoding = 'utf-8'
+                    html_content = response.text
+
+                    # 提取基金类型
+                    type_pattern = r'类型：(.*?)(?:\s*\||</td>)'
+                    fund_type = re.search(type_pattern, html_content)
+                    if not fund_type:
+                        # 尝试备用模式
+                        type_pattern_alt = r'<td[^>]*>基金类型：?</td>\s*<td[^>]*>(.*?)</td>'
+                        fund_type = re.search(type_pattern_alt, html_content)
+                        if not fund_type:
+                            # 再尝试一种模式
+                            type_pattern_alt2 = r'<td class="tb_head">基金类型：</td>[\s\S]*?<td[^>]*>(.*?)</td>'
+                            fund_type = re.search(type_pattern_alt2, html_content)
+                            if not fund_type:
+                                if attempt == 0:  # 第一次尝试失败，等待后重试
+                                    time.sleep(1)
+                                    continue
+                                return None
+                    
+                    fund_type = fund_type.group(1).strip()
+                    # 清除类型中的HTML标签
+                    fund_type = re.sub(r'<.*?>', '', fund_type)
+                    # 解码HTML实体
+                    fund_type = html.unescape(fund_type)
+                    # 清除多余的空白字符
+                    fund_type = re.sub(r'\s+', ' ', fund_type).strip()
+                    
+                    return fund_type
+                
+                except requests.RequestException:
+                    if attempt == 0:  # 第一次尝试失败，等待后重试
+                        time.sleep(1)
+                        continue
+                    return None
+            
+            # 如果所有尝试都失败
+            return None
+        except Exception as e:
+            print(f"获取基金类型失败: {str(e)}")
+            return None
+    
+    def get_fund_info(self, fund_code: str) -> Dict[str, Any]:
+        """
+        获取基金的完整信息，包括名称、净值和类型
+        Args:
+            fund_code: 基金代码
+        Returns:
+            包含基金信息的字典
+        """
+        try:
+            # 首先检查数据库中是否已有该基金信息
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT fund_name, fund_type FROM funds WHERE fund_code = ?", 
+                (fund_code,)
+            )
+            fund_info = cursor.fetchone()
+            
+            # 获取最新净值信息
+            nav_info = self.fetch_current_nav(fund_code)
+            
+            # 准备返回结果
+            result = {
+                'code': fund_code,
+                'name': '',
+                'fund_type': '未知',
+                'nav': 0,
+                'date': ''
+            }
+            
+            # 如果数据库中有信息，优先使用
+            if fund_info and fund_info['fund_name']:
+                result['name'] = fund_info['fund_name']
+                if fund_info['fund_type']:
+                    result['fund_type'] = fund_info['fund_type']
+            # 如果数据库没有信息，使用fetch_fund_info获取
+            else:
+                fund_basic_info = self.fetch_fund_info(fund_code)
+                if fund_basic_info:
+                    result['name'] = fund_basic_info.get('name', '')
+            
+            # 设置净值信息
+            if nav_info:
+                result['nav'] = nav_info.get('nav', 0)
+                result['date'] = nav_info.get('date', '')
+                # 如果数据库中没有名称但API返回了名称
+                if not result['name'] and 'name' in nav_info and nav_info['name']:
+                    result['name'] = nav_info['name']
+            
+            # 如果仍然没有基金类型，尝试获取
+            if result['fund_type'] == '未知':
+                fund_type = self.get_fund_type(fund_code)
+                if fund_type:
+                    result['fund_type'] = fund_type
+                    
+                    # 如果获取到了类型但数据库中没有，更新数据库
+                    if fund_info and not fund_info['fund_type'] and result['name']:
+                        try:
+                            cursor.execute(
+                                "UPDATE funds SET fund_type = ? WHERE fund_code = ?",
+                                (fund_type, fund_code)
+                            )
+                            conn.commit()
+                        except Exception as e:
+                            print(f"更新基金类型失败: {str(e)}")
+                            conn.rollback()
+            
+            conn.close()
+            return result
+        except Exception as e:
+            print(f"获取基金信息失败: {str(e)}")
+            # 确保返回基本结构，即使出错
+            return {
+                'code': fund_code,
+                'name': '',
+                'fund_type': '未知',
+                'nav': 0,
+                'date': ''
+            } 
