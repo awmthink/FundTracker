@@ -134,6 +134,22 @@
               </div>
             </div>
           </div>
+          
+          <!-- 新增的涨幅信息行 -->
+          <div class="detail-row">
+            <div class="detail-item">
+              <div class="label">距上次买入涨幅</div>
+              <div class="value" :class="getProfitClass(holding.since_last_buy_rate)">
+                {{ formatRateValue(holding.since_last_buy_rate) }}
+              </div>
+            </div>
+            <div class="detail-item">
+              <div class="label">距上次卖出涨幅</div>
+              <div class="value" :class="getProfitClass(holding.since_last_sell_rate)">
+                {{ formatRateValue(holding.since_last_sell_rate) }}
+              </div>
+            </div>
+          </div>
         </div>
       </el-card>
     </div>
@@ -235,6 +251,11 @@ export default {
       } finally {
         fund.updating = false
       }
+    },
+
+    formatRateValue(rate) {
+      if (rate === null || rate === undefined) return '--'
+      return `${(rate * 100).toFixed(2)}%`
     },
 
     formatNumber(num, decimals = 2) {

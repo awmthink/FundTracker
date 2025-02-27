@@ -259,14 +259,27 @@ class FundService:
                 total_cost = 0
                 total_profit = 0
                 
-                for tx in fund_data['transactions']:
+                # 用于计算最后一次买入和卖出的净值
+                last_buy_nav = None
+                last_buy_date = None
+                last_sell_nav = None
+                last_sell_date = None
+                
+                # 按时间排序交易记录，确保最后一次交易是最新的
+                sorted_transactions = sorted(fund_data['transactions'], key=lambda x: x['transaction_date'])
+                
+                for tx in sorted_transactions:
                     if tx['transaction_type'] == 'buy':
                         total_buy_amount += tx['amount']
+                        last_buy_nav = tx['nav']
+                        last_buy_date = tx['transaction_date']
                         if not is_money_fund:
                             total_shares += tx['shares']
                             total_cost += tx['amount']
                     elif tx['transaction_type'] == 'sell':
                         total_sell_amount += tx['amount']
+                        last_sell_nav = tx['nav']
+                        last_sell_date = tx['transaction_date']
                         if not is_money_fund:
                             # 计算当前的平均持仓净值
                             avg_cost = total_cost / total_shares if total_shares > 0 else 0
@@ -295,7 +308,13 @@ class FundService:
                         'holding_profit': 0,  # 持有收益为0
                         'holding_profit_rate': 0,  # 持有收益率为0
                         'total_profit': 0,  # 累计收益为0
-                        'last_update_time': fund_data['last_update_time']
+                        'last_update_time': fund_data['last_update_time'],
+                        'last_buy_nav': last_buy_nav,
+                        'last_buy_date': last_buy_date,
+                        'last_sell_nav': last_sell_nav,
+                        'last_sell_date': last_sell_date,
+                        'since_last_buy_rate': 0,  # 货币基金涨幅为0
+                        'since_last_sell_rate': 0   # 货币基金涨幅为0
                     }
                 else:
                     # 非货币型基金正常计算
@@ -306,6 +325,16 @@ class FundService:
                     avg_cost_nav = total_cost / total_shares if total_shares > 0 else 0
                     holding_profit = market_value - total_cost
                     holding_profit_rate = holding_profit / total_cost if total_cost > 0 else 0
+                    
+                    # 计算距上次买入涨幅
+                    since_last_buy_rate = None
+                    if last_buy_nav and current_nav > 0:
+                        since_last_buy_rate = (current_nav - last_buy_nav) / last_buy_nav
+                    
+                    # 计算距上次卖出涨幅
+                    since_last_sell_rate = None
+                    if last_sell_nav and current_nav > 0:
+                        since_last_sell_rate = (current_nav - last_sell_nav) / last_sell_nav
                     
                     holding = {
                         'fund_code': fund_code,
@@ -319,7 +348,13 @@ class FundService:
                         'holding_profit': holding_profit,
                         'holding_profit_rate': holding_profit_rate,
                         'total_profit': total_profit + holding_profit,
-                        'last_update_time': fund_data['last_update_time']
+                        'last_update_time': fund_data['last_update_time'],
+                        'last_buy_nav': last_buy_nav,
+                        'last_buy_date': last_buy_date,
+                        'last_sell_nav': last_sell_nav,
+                        'last_sell_date': last_sell_date,
+                        'since_last_buy_rate': since_last_buy_rate,
+                        'since_last_sell_rate': since_last_sell_rate
                     }
                 
                 # 只添加有持仓的基金
