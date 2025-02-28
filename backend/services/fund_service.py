@@ -208,7 +208,7 @@ class FundService:
             
             # 构建查询语句，根据是否有截止日期添加条件
             query = '''
-                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time,
+                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time, f.target_investment,
                        t.transaction_type, t.amount, t.nav, t.shares, t.transaction_date
                 FROM funds f
                 INNER JOIN fund_transactions t ON f.fund_code = t.fund_code
@@ -236,6 +236,7 @@ class FundService:
                         'current_nav': row['current_nav'] or 0,
                         'last_update_time': row['last_update_time'],
                         'fund_type': row['fund_type'] or '未知',
+                        'target_investment': row['target_investment'] or 0,
                         'transactions': []
                     }
                 
@@ -314,7 +315,8 @@ class FundService:
                         'last_sell_nav': last_sell_nav,
                         'last_sell_date': last_sell_date,
                         'since_last_buy_rate': 0,  # 货币基金涨幅为0
-                        'since_last_sell_rate': 0   # 货币基金涨幅为0
+                        'since_last_sell_rate': 0,   # 货币基金涨幅为0
+                        'target_investment': fund_data['target_investment']
                     }
                 else:
                     # 非货币型基金正常计算
@@ -354,7 +356,8 @@ class FundService:
                         'last_sell_nav': last_sell_nav,
                         'last_sell_date': last_sell_date,
                         'since_last_buy_rate': since_last_buy_rate,
-                        'since_last_sell_rate': since_last_sell_rate
+                        'since_last_sell_rate': since_last_sell_rate,
+                        'target_investment': fund_data['target_investment']
                     }
                 
                 # 只添加有持仓的基金
@@ -390,52 +393,36 @@ class FundService:
 
     def save_fund_settings(self, data):
         """保存基金设置"""
+        conn = self.get_db_connection()
         try:
-            conn = self.get_db_connection()
             cursor = conn.cursor()
             
-            # 检查基金是否已存在
-            cursor.execute(
-                "SELECT 1 FROM funds WHERE fund_code = ?", 
-                (data['fund_code'],)
-            )
-            exists = cursor.fetchone()
+            # 检查基金代码是否存在
+            cursor.execute('SELECT * FROM funds WHERE fund_code = ?', (data['fund_code'],))
+            fund = cursor.fetchone()
             
-            if exists:
+            if fund:
                 # 更新现有基金
-                cursor.execute(
-                    """
+                cursor.execute('''
                     UPDATE funds 
-                    SET fund_name = ?, buy_fee = ?, fund_type = ?, updated_at = CURRENT_TIMESTAMP 
+                    SET fund_name = ?, buy_fee = ?, fund_type = ?, target_investment = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE fund_code = ?
-                    """,
-                    (
-                        data['fund_name'], 
-                        data['buy_fee'],
-                        data.get('fund_type', '未知'),
-                        data['fund_code']
-                    )
-                )
+                ''', (data['fund_name'], data['buy_fee'], data['fund_type'], data.get('target_investment', 0), data['fund_code']))
             else:
                 # 插入新基金
-                cursor.execute(
-                    """
-                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """,
-                    (
-                        data['fund_code'], 
-                        data['fund_name'], 
-                        data['buy_fee'],
-                        data.get('fund_type', '未知')
-                    )
-                )
+                cursor.execute('''
+                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, target_investment)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (data['fund_code'], data['fund_name'], data['buy_fee'], data['fund_type'], data.get('target_investment', 0)))
             
             conn.commit()
             return True
         except Exception as e:
             conn.rollback()
-            raise e
+            print(f"保存基金设置失败: {str(e)}")
+            raise ValueError(f"保存基金设置失败: {str(e)}")
+        finally:
+            conn.close()
 
     def check_fund_transactions(self, fund_code):
         conn = self.get_db_connection()
@@ -635,14 +622,11 @@ class FundService:
             if not cursor.fetchone():
                 raise ValueError('交易记录不存在')
 
-            # 获取基金ID
-            cursor.execute('SELECT fund_id FROM funds WHERE fund_code = ?', 
+            # 验证基金是否存在
+            cursor.execute('SELECT * FROM funds WHERE fund_code = ?', 
                           (data['fund_code'],))
-            fund_result = cursor.fetchone()
-            if not fund_result:
+            if not cursor.fetchone():
                 raise ValueError('基金不存在')
-            
-            fund_id = fund_result[0]
             
             # 计算手续费
             if data['transaction_type'] == 'sell':
@@ -656,18 +640,17 @@ class FundService:
             # 计算份额
             shares = amount / nav
             
-            # 更新交易记录
+            # 更新交易记录 - 注意这里不再使用 fund_id
             cursor.execute('''
                 UPDATE fund_transactions 
-                SET fund_id = ?, 
-                    transaction_type = ?, 
+                SET transaction_type = ?, 
                     amount = ?, 
                     nav = ?, 
                     fee = ?, 
                     transaction_date = ?, 
                     shares = ?
                 WHERE transaction_id = ?
-            ''', (fund_id, data['transaction_type'], amount, nav, fee,
+            ''', (data['transaction_type'], amount, nav, fee,
                   data['transaction_date'], shares, transaction_id))
             
             if cursor.rowcount == 0:

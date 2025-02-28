@@ -43,6 +43,15 @@
             </template>
           </el-table-column>
           <el-table-column 
+            label="目标投入" 
+            width="120" 
+            align="center"
+          >
+            <template #default="scope">
+              {{ formatCurrency(scope.row.target_investment) }}
+            </template>
+          </el-table-column>
+          <el-table-column 
             label="操作" 
             width="150" 
             align="center"
@@ -112,6 +121,16 @@
               style="width: 180px"
             />
           </el-form-item>
+          
+          <el-form-item label="目标投入" prop="target_investment">
+            <el-input-number
+              v-model="currentFund.target_investment"
+              :precision="2"
+              :step="1000"
+              :min="0"
+              style="width: 180px"
+            />
+          </el-form-item>
         </el-form>
 
         <div class="dialog-footer" style="text-align: center; margin-top: 20px;">
@@ -137,6 +156,7 @@ export default {
         fund_name: '',
         fund_type: '',
         buy_fee: 0,
+        target_investment: 0,
       },
       isEditing: false,
       rules: {
@@ -149,6 +169,9 @@ export default {
         ],
         buy_fee: [
           { required: true, message: '请输入买入费率', trigger: 'blur' }
+        ],
+        target_investment: [
+          { required: true, message: '请输入目标投入金额', trigger: 'blur' }
         ],
       },
       loading: false,
@@ -166,7 +189,8 @@ export default {
             fund_code: fund.fund_code,
             fund_name: fund.fund_name,
             fund_type: fund.fund_type || '未知',
-            buy_fee: (fund.buy_fee * 100).toFixed(4)
+            buy_fee: (fund.buy_fee * 100).toFixed(4),
+            target_investment: fund.target_investment || 0
           }));
         } else {
           throw new Error(response.data.message || '未知错误');
@@ -201,7 +225,8 @@ export default {
         fund_code: fund.fund_code,
         fund_name: fund.fund_name,
         fund_type: fund.fund_type || '',
-        buy_fee: parseFloat(fund.buy_fee)
+        buy_fee: parseFloat(fund.buy_fee),
+        target_investment: fund.target_investment || 0
       };
     },
     async handleDelete(fund) {
@@ -256,6 +281,7 @@ export default {
         fund_name: '',
         fund_type: '',
         buy_fee: 0,
+        target_investment: 0,
       };
       if (this.$refs.fundForm) {
         this.$refs.fundForm.resetFields();
@@ -295,6 +321,13 @@ export default {
       this.resetForm();
       this.dialogVisible = false;
     },
+    formatCurrency(value) {
+      return new Intl.NumberFormat('zh-CN', {
+        style: 'currency',
+        currency: 'CNY',
+        minimumFractionDigits: 2
+      }).format(value);
+    }
   },
   mounted() {
     // 组件挂载时不自动加载数据，而是等待对话框打开时加载

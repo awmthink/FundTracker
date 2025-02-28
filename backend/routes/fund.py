@@ -127,7 +127,7 @@ def get_all_fund_settings():
     try:
         cursor = fund_service.get_db_connection().cursor()
         cursor.execute('''
-            SELECT fund_code, fund_name, buy_fee, fund_type
+            SELECT fund_code, fund_name, buy_fee, fund_type, target_investment
             FROM funds
             ORDER BY fund_code
         ''')
@@ -138,7 +138,8 @@ def get_all_fund_settings():
                 'fund_code': row['fund_code'],
                 'fund_name': row['fund_name'],
                 'buy_fee': float(row['buy_fee']),
-                'fund_type': row['fund_type']
+                'fund_type': row['fund_type'],
+                'target_investment': float(row['target_investment']) if row['target_investment'] is not None else 0
             } for row in settings]
         })
     except Exception as e:
