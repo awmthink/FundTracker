@@ -2,7 +2,7 @@
   <el-container class="app-container" :class="{ 'dark-theme': isDarkTheme }">
     <el-header>
       <div class="header-content">
-        <h1>FundTracker</h1>
+        <h1>FinTracker</h1>
         <el-switch
           v-model="isDarkTheme"
           class="theme-switch"

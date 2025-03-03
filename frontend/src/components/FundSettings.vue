@@ -131,6 +131,16 @@
               style="width: 180px"
             />
           </el-form-item>
+          
+          <el-form-item label="投资策略" prop="investment_strategy">
+            <el-input
+              v-model="currentFund.investment_strategy"
+              type="textarea"
+              :rows="4"
+              style="width: 300px"
+              placeholder="请输入投资策略（可选）"
+            />
+          </el-form-item>
         </el-form>
 
         <div class="dialog-footer" style="text-align: center; margin-top: 20px;">
@@ -157,6 +167,7 @@ export default {
         fund_type: '',
         buy_fee: 0,
         target_investment: 0,
+        investment_strategy: '',
       },
       isEditing: false,
       rules: {
@@ -183,14 +194,16 @@ export default {
       this.loading = true;
       try {
         const response = await fundApi.getAllFundSettings();
+        console.log('API Response:', response.data); // 调试输出
         if (response.data.status === 'success') {
-          // 转换费率为百分比，只获取需要的字段
+          // 转换费率为百分比，获取所有需要的字段
           this.funds = response.data.data.map(fund => ({
             fund_code: fund.fund_code,
             fund_name: fund.fund_name,
             fund_type: fund.fund_type || '未知',
             buy_fee: (fund.buy_fee * 100).toFixed(4),
-            target_investment: fund.target_investment || 0
+            target_investment: fund.target_investment || 0,
+            investment_strategy: fund.investment_strategy || ''
           }));
         } else {
           throw new Error(response.data.message || '未知错误');
@@ -220,13 +233,15 @@ export default {
       }
     },
     editFund(fund) {
+      console.log('Editing fund with data:', fund); // 调试输出
       this.isEditing = true
       this.currentFund = {
         fund_code: fund.fund_code,
         fund_name: fund.fund_name,
         fund_type: fund.fund_type || '',
         buy_fee: parseFloat(fund.buy_fee),
-        target_investment: fund.target_investment || 0
+        target_investment: fund.target_investment || 0,
+        investment_strategy: fund.investment_strategy || ''
       };
     },
     async handleDelete(fund) {
@@ -282,6 +297,7 @@ export default {
         fund_type: '',
         buy_fee: 0,
         target_investment: 0,
+        investment_strategy: '',
       };
       if (this.$refs.fundForm) {
         this.$refs.fundForm.resetFields();

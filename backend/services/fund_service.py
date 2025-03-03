@@ -161,10 +161,7 @@ class FundService:
                              'amount', 'nav', 'fee', 'shares', 'transaction_date']
             for field in required_fields:
                 if field not in data:
-                    return {
-                        'status': 'error',
-                        'message': f'缺少必需字段: {field}'
-                    }
+                    raise ValueError(f'缺少必需字段: {field}')
             
             # 检查基金是否存在，不存在则添加
             cursor.execute('''
@@ -181,18 +178,12 @@ class FundService:
                   data['fee'], data['transaction_date'], data['shares']))
             
             conn.commit()
-            return {
-                'status': 'success',
-                'message': '交易添加成功'
-            }
+            return True
             
         except Exception as e:
             conn.rollback()
             print(f"添加交易失败: {str(e)}")
-            return {
-                'status': 'error',
-                'message': f'添加交易失败: {str(e)}'
-            }
+            raise
         finally:
             conn.close()
 
@@ -208,7 +199,7 @@ class FundService:
             
             # 构建查询语句，根据是否有截止日期添加条件
             query = '''
-                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time, f.target_investment,
+                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time, f.target_investment, f.investment_strategy,
                        t.transaction_type, t.amount, t.nav, t.shares, t.transaction_date
                 FROM funds f
                 INNER JOIN fund_transactions t ON f.fund_code = t.fund_code
@@ -237,6 +228,7 @@ class FundService:
                         'last_update_time': row['last_update_time'],
                         'fund_type': row['fund_type'] or '未知',
                         'target_investment': row['target_investment'] or 0,
+                        'investment_strategy': row['investment_strategy'] or '',
                         'transactions': []
                     }
                 
@@ -316,7 +308,8 @@ class FundService:
                         'last_sell_date': last_sell_date,
                         'since_last_buy_rate': 0,  # 货币基金涨幅为0
                         'since_last_sell_rate': 0,   # 货币基金涨幅为0
-                        'target_investment': fund_data['target_investment']
+                        'target_investment': fund_data['target_investment'],
+                        'investment_strategy': fund_data['investment_strategy']
                     }
                 else:
                     # 非货币型基金正常计算
@@ -357,7 +350,8 @@ class FundService:
                         'last_sell_date': last_sell_date,
                         'since_last_buy_rate': since_last_buy_rate,
                         'since_last_sell_rate': since_last_sell_rate,
-                        'target_investment': fund_data['target_investment']
+                        'target_investment': fund_data['target_investment'],
+                        'investment_strategy': fund_data['investment_strategy']
                     }
                 
                 # 只添加有持仓的基金
@@ -372,6 +366,7 @@ class FundService:
             conn.close()
 
     def update_nav(self, data):
+        """更新基金净值"""
         conn = self.get_db_connection()
         cursor = conn.cursor()
         
@@ -384,10 +379,10 @@ class FundService:
             ''', (data['current_nav'], datetime.now(), data['fund_code']))
             
             conn.commit()
-            return jsonify({'status': 'success'})
+            return True
         except Exception as e:
             conn.rollback()
-            return jsonify({'status': 'error', 'message': str(e)})
+            raise e
         finally:
             conn.close()
 
@@ -405,15 +400,19 @@ class FundService:
                 # 更新现有基金
                 cursor.execute('''
                     UPDATE funds 
-                    SET fund_name = ?, buy_fee = ?, fund_type = ?, target_investment = ?, updated_at = CURRENT_TIMESTAMP
+                    SET fund_name = ?, buy_fee = ?, fund_type = ?, target_investment = ?, 
+                        investment_strategy = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE fund_code = ?
-                ''', (data['fund_name'], data['buy_fee'], data['fund_type'], data.get('target_investment', 0), data['fund_code']))
+                ''', (data['fund_name'], data['buy_fee'], data['fund_type'], 
+                      data.get('target_investment', 0), data.get('investment_strategy', ''), 
+                      data['fund_code']))
             else:
                 # 插入新基金
                 cursor.execute('''
-                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, target_investment)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (data['fund_code'], data['fund_name'], data['buy_fee'], data['fund_type'], data.get('target_investment', 0)))
+                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, target_investment, investment_strategy)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (data['fund_code'], data['fund_name'], data['buy_fee'], data['fund_type'], 
+                      data.get('target_investment', 0), data.get('investment_strategy', '')))
             
             conn.commit()
             return True
@@ -803,4 +802,29 @@ class FundService:
                 'fund_type': '未知',
                 'nav': 0,
                 'date': ''
-            } 
+            }
+
+    def get_all_fund_settings(self):
+        """获取所有基金设置"""
+        conn = self.get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT fund_code, fund_name, buy_fee, fund_type, target_investment, investment_strategy
+                FROM funds
+                ORDER BY fund_code
+            ''')
+            settings = cursor.fetchall()
+            return [{
+                'fund_code': row['fund_code'],
+                'fund_name': row['fund_name'],
+                'buy_fee': float(row['buy_fee']),
+                'fund_type': row['fund_type'],
+                'target_investment': float(row['target_investment']) if row['target_investment'] is not None else 0,
+                'investment_strategy': row['investment_strategy']
+            } for row in settings]
+        except Exception as e:
+            print(f"获取基金设置失败: {str(e)}")
+            raise e
+        finally:
+            conn.close() 

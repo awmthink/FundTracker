@@ -116,6 +116,17 @@
             <div class="fund-name">{{ holding.fund_name }}</div>
             <div class="fund-code">{{ holding.fund_code }}</div>
           </div>
+          <div class="strategy-button">
+            <el-tooltip content="查看投资策略" placement="top">
+              <el-button 
+                type="info" 
+                circle 
+                size="small" 
+                icon="InfoFilled" 
+                @click="showStrategy(holding)"
+              ></el-button>
+            </el-tooltip>
+          </div>
         </div>
 
         <div class="holding-details">
@@ -217,6 +228,22 @@
         </div>
       </el-card>
     </div>
+
+    <!-- 策略弹窗 -->
+    <el-dialog
+      v-model="strategyDialogVisible"
+      title="投资策略"
+      width="500px"
+      :destroy-on-close="true"
+      class="strategy-dialog"
+    >
+      <div class="strategy-content" v-if="currentFund">
+        <h3>{{ currentFund.fund_name }} ({{ currentFund.fund_code }})</h3>
+        <div class="strategy-text">
+          {{ currentFund.investment_strategy || '暂无投资策略' }}
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -241,7 +268,9 @@ export default {
       monetaryPercentage: 0,
       nonMonetaryPercentage: 0,
       totalTargetInvestment: 0,
-      investmentCompletionRate: 0
+      investmentCompletionRate: 0,
+      strategyDialogVisible: false,
+      currentFund: null
     }
   },
   methods: {
@@ -363,6 +392,11 @@ export default {
       if (percentage < 70) return '#409EFF'  // 蓝色
       if (percentage < 90) return '#E6A23C'  // 橙色
       return '#67C23A'  // 绿色
+    },
+
+    showStrategy(fund) {
+      this.currentFund = fund;
+      this.strategyDialogVisible = true;
     }
   },
   mounted() {
@@ -737,5 +771,40 @@ export default {
 .dark-theme :deep(.el-collapse-item__arrow) {
   color: #e0e0e0 !important;
   font-size: 16px !important;
+}
+
+.strategy-button {
+  margin-left: 10px;
+}
+
+.strategy-content h3 {
+  margin-top: 0;
+  color: var(--text-color);
+  font-size: 18px;
+  margin-bottom: 16px;
+}
+
+.strategy-text {
+  white-space: pre-line;
+  line-height: 1.6;
+  color: var(--text-color);
+  background-color: var(--bg-color-light, rgba(0, 0, 0, 0.03));
+  padding: 16px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* 暗色模式样式 */
+.dark-theme .strategy-text {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+:deep(.strategy-dialog .el-dialog__header) {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+:deep(.strategy-dialog .el-dialog__body) {
+  padding: 20px;
 }
 </style>
