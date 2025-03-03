@@ -13,7 +13,6 @@ class FundService:
         self.db_name = 'finance.db'
         self.base_urls = {
             'fund_info': 'http://fund.eastmoney.com/pingzhongdata/{}.js',
-            'current_nav': 'http://fundgz.1234567.com.cn/js/{}.js',
             'historical_nav': 'http://fund.eastmoney.com/f10/F10DataApi.aspx'
         }
         self.headers = {
@@ -54,49 +53,21 @@ class FundService:
         return None
 
     def fetch_current_nav(self, fund_code: str) -> Optional[Dict[str, Any]]:
-        """获取基金当前净值，统一读取前1天的净值，如遇周末或公休假日则读取上一个工作日的净值"""
-        # 获取前一天日期
-        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        """获取基金当前净值，统一读取前1天的净值，如遇周末或公休假日则递归读取上一个工作日的净值"""
+        # 最大前向递归次数为10天
+        MAX_DAYS_BACK = 10
         
-        # 尝试获取历史净值（前一天的）
-        historical_nav = self.get_historical_nav(fund_code, yesterday)
+        # 尝试获取最近10个工作日内的净值
+        for days_back in range(1, MAX_DAYS_BACK + 1):
+            check_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            historical_nav = self.get_historical_nav(fund_code, check_date)
+            if historical_nav:
+                return {
+                    'nav': historical_nav,
+                    'update_time': check_date
+                }
         
-        # 如果获取到了历史净值，直接返回
-        if historical_nav:
-            return {
-                'nav': historical_nav,
-                'update_time': yesterday
-            }
-        
-        # 如果没有获取到前一天的净值（可能是周末或假日），尝试获取实时数据
-        url = self.base_urls['current_nav'].format(fund_code)
-        content = self._make_request(url)
-        
-        if not content or 'jsonpgz(' not in content:
-            # 如果实时数据也获取失败，尝试获取最近5个工作日内的净值
-            for days_back in range(2, 6):  # 尝试往前2-5天
-                check_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
-                historical_nav = self.get_historical_nav(fund_code, check_date)
-                if historical_nav:
-                    return {
-                        'nav': historical_nav,
-                        'update_time': check_date
-                    }
-            return None
-        
-        try:
-            json_str = content.replace('jsonpgz(', '').replace(');', '')
-            fund_data = json.loads(json_str)
-            
-            # 优先使用单位净值(dwjz)，这通常是上一个工作日的净值
-            nav = float(fund_data.get('dwjz', 0))
-            update_time = fund_data.get('jzrq')  # 净值日期
-            
-            if nav and update_time:
-                self._update_fund_nav(fund_code, nav, update_time)
-                return {'nav': nav, 'update_time': update_time}
-        except Exception as e:
-            print(f"Error parsing current NAV: {str(e)}")
+        # 如果历史净值获取失败，直接返回None
         return None
 
     def get_historical_nav(self, fund_code: str, date: str) -> Optional[float]:
@@ -123,10 +94,11 @@ class FundService:
                     return float(nav_str)
                 except ValueError:
                     print(f"NAV conversion failed: {nav_str}")
-                    
-        # 如果没找到历史净值，尝试获取当前净值
-        current_nav = self.fetch_current_nav(fund_code)
-        return current_nav['nav'] if current_nav else None
+                    return None
+        
+        # 如果没有匹配到数据，直接返回None
+        print(f"No historical NAV found for fund {fund_code} on date {date}")
+        return None
 
     def _update_fund_nav(self, fund_code: str, nav: float, update_time: str) -> None:
         """更新基金净值到数据库"""
@@ -484,31 +456,23 @@ class FundService:
             cursor.execute('SELECT fund_code FROM funds')
             funds = cursor.fetchall()
             
-            # 获取前一天日期
-            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-            
             updated_count = 0
             for fund in funds:
                 fund_code = fund['fund_code']
                 
-                # 优先尝试获取前一天的历史净值
-                historical_nav = self.get_historical_nav(fund_code, yesterday)
+                # 尝试获取最新净值
+                result = self.fetch_current_nav(fund_code)
                 
-                if historical_nav:
+                if result:
                     # 更新数据库中的净值
                     cursor.execute('''
                         UPDATE funds 
                         SET current_nav = ?,
                             last_update_time = ?
                         WHERE fund_code = ?
-                    ''', (historical_nav, yesterday, fund_code))
+                    ''', (result['nav'], result['update_time'], fund_code))
                     conn.commit()
                     updated_count += 1
-                else:
-                    # 如果获取不到前一天的净值，尝试获取实时数据
-                    result = self.fetch_current_nav(fund_code)
-                    if result:
-                        updated_count += 1
             
             return {
                 'total': len(funds),
