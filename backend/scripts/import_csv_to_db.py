@@ -29,7 +29,7 @@ def import_csv_to_db(funds_file=None, transactions_file=None):
                         cursor.execute('''
                             INSERT OR REPLACE INTO funds (
                                 fund_code, fund_name, current_nav, last_update_time,
-                                buy_fee, sell_fee_lt7, sell_fee_lt365, sell_fee_gt365,
+                                buy_fee, fund_type, target_investment, investment_strategy,
                                 created_at, updated_at
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
@@ -38,11 +38,11 @@ def import_csv_to_db(funds_file=None, transactions_file=None):
                             float(row['current_nav']) if row['current_nav'] else 0,
                             row['last_update_time'],
                             float(row['buy_fee']) if row['buy_fee'] else 0,
-                            float(row['sell_fee_lt7']) if row['sell_fee_lt7'] else 0,
-                            float(row['sell_fee_lt365']) if row['sell_fee_lt365'] else 0,
-                            float(row['sell_fee_gt365']) if row['sell_fee_gt365'] else 0,
-                            row['created_at'],
-                            row['updated_at']
+                            row.get('fund_type', ''),
+                            float(row.get('target_investment', 0)) if row.get('target_investment') else 0,
+                            row.get('investment_strategy', ''),
+                            row.get('created_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+                            row.get('updated_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                         ))
                         stats['funds']['success'] += 1
                     except Exception as e:
@@ -62,7 +62,7 @@ def import_csv_to_db(funds_file=None, transactions_file=None):
                                 amount, nav, fee, transaction_date, shares
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
-                            int(row['transaction_id']),
+                            int(row['transaction_id']) if row.get('transaction_id') else None,
                             row['fund_code'],
                             row['transaction_type'],
                             float(row['amount']),

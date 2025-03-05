@@ -11,7 +11,9 @@ BACKEND_DIR = backend
 FRONTEND_DIR = frontend
 DB_NAME = finance.db
 EXPORT_DIR = db_exports
+BACKUP_DIR = db_backups
 REQUIREMENTS = $(BACKEND_DIR)/requirements.txt
+DATE := $(shell date +%Y%m%d_%H%M%S)
 
 # Default target
 .PHONY: help
@@ -28,8 +30,11 @@ help:
 	@echo "  make init-db       - Initialize the database"
 	@echo ""
 	@echo "Database Management:"
-	@echo "  make backup-db     - Export database to CSV files"
-	@echo "  make restore-db    - Import database from latest CSV backup"
+	@echo "  make export-db     - Export database to CSV files (renamed from backup-db)"
+	@echo "  make import-db     - Import database from latest CSV export (renamed from restore-db)"
+	@echo "  make backup-db     - Create a full database backup file"
+	@echo "  make restore-db    - Restore database from a backup file"
+	@echo "  make list-backups  - List all available database backups"
 	@echo ""
 	@echo "Deployment:"
 	@echo "  make build         - Build the frontend for production"
@@ -66,18 +71,43 @@ start-frontend:
 	cd $(FRONTEND_DIR) && $(NPM) run dev
 
 # Database commands
-.PHONY: init-db backup-db restore-db
+.PHONY: init-db export-db import-db backup-db restore-db list-backups
 init-db:
 	@echo "Initializing database..."
 	cd $(BACKEND_DIR) && $(PYTHON) init_db.py
 
-backup-db:
-	@echo "Backing up database to CSV files..."
+# Renamed from backup-db to export-db
+export-db:
+	@echo "Exporting database to CSV files..."
 	cd $(BACKEND_DIR) && $(PYTHON) scripts/export_db_to_csv.py
 
-restore-db:
-	@echo "Restoring database from latest CSV backup..."
+# Renamed from restore-db to import-db
+import-db:
+	@echo "Importing database from latest CSV export..."
 	cd $(BACKEND_DIR) && $(PYTHON) scripts/import_csv_to_db.py
+
+# New backup-db command for full database backup
+backup-db:
+	@echo "Creating full database backup..."
+	@mkdir -p $(BACKEND_DIR)/$(BACKUP_DIR)
+	cd $(BACKEND_DIR) && sqlite3 $(DB_NAME) ".backup '$(BACKUP_DIR)/$(DB_NAME).$(DATE).bak'"
+	@echo "Database backed up to $(BACKEND_DIR)/$(BACKUP_DIR)/$(DB_NAME).$(DATE).bak"
+
+# New restore-db command for restoring from backup
+restore-db:
+	@echo "Available backups:"
+	@ls -lt $(BACKEND_DIR)/$(BACKUP_DIR) | grep -v "^total" | head -5
+	@echo "Enter backup filename to restore (from list above):"
+	@read backup_file && \
+	echo "Restoring from $$backup_file..." && \
+	cd $(BACKEND_DIR) && \
+	sqlite3 $(DB_NAME) ".restore '$(BACKUP_DIR)/$$backup_file'"
+	@echo "Database restored successfully."
+
+# List available backups
+list-backups:
+	@echo "Available database backups:"
+	@ls -lt $(BACKEND_DIR)/$(BACKUP_DIR) | grep -v "^total"
 
 # Build and deployment commands
 .PHONY: build deploy
