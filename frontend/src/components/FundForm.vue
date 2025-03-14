@@ -388,4 +388,13 @@ export default {
   text-align: right;
   margin-top: 20px;
 }
+
+/* 添加收益颜色样式，保持一致性 */
+.profit {
+  color: #F56C6C;  /* 红色，表示正收益 */
+}
+
+.loss {
+  color: #67C23A;  /* 绿色，表示负收益 */
+}
 </style>

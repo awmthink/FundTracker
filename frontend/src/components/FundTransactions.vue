@@ -461,4 +461,13 @@ export default {
 .el-date-picker {
   width: 240px !important;  /* 日期选择器需要更宽一些 */
 }
+
+/* 修改收益颜色样式 */
+:deep(.profit) {
+  color: #F56C6C !important;  /* 红色，表示正收益 */
+}
+
+:deep(.loss) {
+  color: #67C23A !important;  /* 绿色，表示负收益 */
+}
 </style> 

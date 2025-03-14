@@ -14,7 +14,7 @@ def init_db():
     with open('database/schema.sql', 'r') as f:
         schema = f.read()
     
-    # 执行 SQL 语句
+    # 执行 SQL 语句r
     cursor.executescript(schema)
     
     # 提交更改并关闭连接

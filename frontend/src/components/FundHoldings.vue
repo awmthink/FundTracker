@@ -3,11 +3,7 @@
     <div class="header">
       <h2>基金持仓</h2>
       <div class="actions">
-        <el-button 
-          type="primary"
-          :loading="updating"
-          @click="updateAllNavs"
-        >
+        <el-button type="primary" :loading="updating" @click="updateAllNavs">
           更新全部净值
         </el-button>
         <span v-if="lastUpdateTime" class="last-update-time">
@@ -65,14 +61,8 @@
             <div class="allocation-percentage">{{ formatNumber(monetaryPercentage) }}%</div>
           </div>
           <div class="allocation-progress">
-            <div 
-              class="non-monetary-progress" 
-              :style="{ width: `${nonMonetaryPercentage}%` }"
-            ></div>
-            <div 
-              class="monetary-progress" 
-              :style="{ width: `${monetaryPercentage}%` }"
-            ></div>
+            <div class="non-monetary-progress" :style="{ width: `${nonMonetaryPercentage}%` }"></div>
+            <div class="monetary-progress" :style="{ width: `${monetaryPercentage}%` }"></div>
           </div>
         </div>
       </el-card>
@@ -84,12 +74,8 @@
         </div>
         <div class="investment-plan-content">
           <div class="progress-container">
-            <el-progress 
-              :percentage="investmentCompletionRate" 
-              :format="() => ''" 
-              :stroke-width="10"
-              :color="getProgressColor(investmentCompletionRate)"
-            />
+            <el-progress :percentage="investmentCompletionRate" :format="() => ''" :stroke-width="10"
+              :color="getProgressColor(investmentCompletionRate)" />
           </div>
           <div class="plan-summary">
             <div class="plan-item">
@@ -110,7 +96,8 @@
     </div>
 
     <div class="holdings-grid">
-      <el-card v-for="holding in holdings" :key="holding.fund_code" class="holding-card">
+      <el-card v-for="holding in holdings" :key="holding.fund_code" class="holding-card"
+        :class="{'monetary-fund-card': holding.fund_type && holding.fund_type.includes('货币')}">
         <div class="holding-header">
           <div class="fund-info">
             <div class="fund-name">{{ holding.fund_name }}</div>
@@ -118,13 +105,7 @@
           </div>
           <div class="strategy-button">
             <el-tooltip content="查看投资策略" placement="top">
-              <el-button 
-                type="info" 
-                circle 
-                size="small" 
-                icon="InfoFilled" 
-                @click="showStrategy(holding)"
-              ></el-button>
+              <el-button type="info" circle size="small" icon="InfoFilled" @click="showStrategy(holding)"></el-button>
             </el-tooltip>
           </div>
         </div>
@@ -143,23 +124,46 @@
               </div>
             </div>
           </div>
-          
+
           <div class="detail-row">
             <div class="detail-item">
-              <div class="label">持有份额</div>
-              <div class="value">{{ formatCurrency(holding.total_shares) }}</div>
+              <div class="label">持有收益率</div>
+              <div class="value" :class="getProfitClass(holding.holding_profit_rate)">
+                {{ formatNumber(holding.holding_profit_rate * 100) }}%
+              </div>
             </div>
-
             <div class="detail-item">
-                <div class="label">持仓成本</div>
-                <div class="value">¥ {{ formatCurrency(holding.cost_amount) }}</div>
+              <div class="label">累计收益</div>
+              <div class="value" :class="getProfitClass(holding.total_profit)">
+                ¥ {{ formatCurrency(holding.total_profit) }}
+              </div>
             </div>
-            
           </div>
 
-          
+          <!-- 可折叠部分 -->
+          <el-collapse>
+            <el-collapse-item>
+              <template #title>
+                <div class="collapse-title">
+                  <span>更多详情</span>
+                </div>
+              </template>
 
-          <div class="detail-row">
+              <!-- 折叠内容 - 详细信息 -->
+
+              <div class="detail-row">
+                <div class="detail-item">
+                  <div class="label">持有份额</div>
+                  <div class="value">{{ formatCurrency(holding.total_shares) }}</div>
+                </div>
+
+                <div class="detail-item">
+                  <div class="label">持仓成本</div>
+                  <div class="value">¥ {{ formatCurrency(holding.cost_amount) }}</div>
+                </div>
+              </div>
+
+              <div class="detail-row">
                 <div class="detail-item">
                   <div class="label">平均持仓净值</div>
                   <div class="value">{{ formatNumber(holding.avg_cost_nav, 4) }}</div>
@@ -172,43 +176,18 @@
 
               <div class="detail-row">
                 <div class="detail-item">
-                  <div class="label">持有收益率</div>
-                  <div class="value" :class="getProfitClass(holding.holding_profit_rate)">
-                    {{ formatNumber(holding.holding_profit_rate * 100) }}%
-                  </div>
-                </div>
-                <div class="detail-item">
-                  <div class="label">累计收益</div>
-                  <div class="value" :class="getProfitClass(holding.total_profit)">
-                    ¥ {{ formatCurrency(holding.total_profit) }}
-                  </div>
-                </div>
-              </div>
-
-          <!-- 可折叠部分 -->
-          <el-collapse>
-            <el-collapse-item>
-              <template #title>
-                <div class="collapse-title">
-                  <span>更多详情</span>
-                </div>
-              </template>
-              
-              <!-- 折叠内容 - 详细信息 -->
-
-              <div class="detail-row">
-                <div class="detail-item">
                   <div class="label">目标投入</div>
                   <div class="value">¥ {{ formatCurrency(holding.target_investment || 0) }}</div>
                 </div>
                 <div class="detail-item">
                   <div class="label">投入进度</div>
                   <div class="value">
-                    {{ holding.target_investment ? formatNumber((holding.cost_amount / holding.target_investment) * 100) : '0' }}%
+                    {{ holding.target_investment ? formatNumber((holding.cost_amount / holding.target_investment) * 100)
+                      : '0' }}%
                   </div>
                 </div>
               </div>
-              
+
               <div class="detail-row">
                 <div class="detail-item">
                   <div class="label">距上次买入涨幅</div>
@@ -230,13 +209,8 @@
     </div>
 
     <!-- 策略弹窗 -->
-    <el-dialog
-      v-model="strategyDialogVisible"
-      title="投资策略"
-      width="500px"
-      :destroy-on-close="true"
-      class="strategy-dialog"
-    >
+    <el-dialog v-model="strategyDialogVisible" title="投资策略" width="500px" :destroy-on-close="true"
+      class="strategy-dialog">
       <div class="strategy-content" v-if="currentFund">
         <h3>{{ currentFund.fund_name }} ({{ currentFund.fund_code }})</h3>
         <div class="strategy-text">
@@ -290,27 +264,27 @@ export default {
           this.totalMarketValue = response.data.data.reduce((total, holding) => total + holding.market_value, 0)
           this.totalHoldingProfit = response.data.data.reduce((total, holding) => total + holding.holding_profit, 0)
           this.totalProfit = response.data.data.reduce((total, holding) => total + holding.total_profit, 0)
-          
+
           // 计算货币类和非货币类基金市值
           this.monetaryValue = response.data.data
             .filter(holding => holding.fund_type && holding.fund_type.includes('货币'))
             .reduce((total, holding) => total + holding.market_value, 0)
-          
+
           this.nonMonetaryValue = this.totalMarketValue - this.monetaryValue
-          
+
           // 计算百分比
-          this.monetaryPercentage = this.totalMarketValue > 0 
-            ? (this.monetaryValue / this.totalMarketValue * 100) 
+          this.monetaryPercentage = this.totalMarketValue > 0
+            ? (this.monetaryValue / this.totalMarketValue * 100)
             : 0
-          
-          this.nonMonetaryPercentage = this.totalMarketValue > 0 
-            ? (this.nonMonetaryValue / this.totalMarketValue * 100) 
+
+          this.nonMonetaryPercentage = this.totalMarketValue > 0
+            ? (this.nonMonetaryValue / this.totalMarketValue * 100)
             : 0
-          
+
           // 计算总目标投入和投入完成率
           this.totalTargetInvestment = response.data.data
             .reduce((total, holding) => total + (holding.target_investment || 0), 0)
-          
+
           this.investmentCompletionRate = this.totalTargetInvestment > 0
             ? (this.totalInvestment / this.totalTargetInvestment * 100)
             : 0
@@ -471,10 +445,12 @@ export default {
   margin-bottom: 30px;
 }
 
-.asset-allocation-card, 
+.asset-allocation-card,
 .investment-plan-card {
-  margin-bottom: 0;  /* 覆盖原来的下边距 */
-  height: 100%;      /* 确保两个卡片高度一致 */
+  margin-bottom: 0;
+  /* 覆盖原来的下边距 */
+  height: 100%;
+  /* 确保两个卡片高度一致 */
   background-color: var(--card-bg);
   border-color: var(--border-color);
 }
@@ -645,11 +621,11 @@ export default {
 }
 
 .profit {
-  color: #67C23A;
+  color: #F56C6C;  /* 红色，表示正收益 */
 }
 
 .loss {
-  color: #F56C6C;
+  color: #67C23A;  /* 绿色，表示负收益 */
 }
 
 @media (max-width: 768px) {
@@ -657,7 +633,7 @@ export default {
     grid-template-columns: 1fr;
     gap: 20px;
   }
-  
+
   .asset-allocation-card,
   .investment-plan-card {
     margin-bottom: 0;
@@ -806,5 +782,16 @@ export default {
 
 :deep(.strategy-dialog .el-dialog__body) {
   padding: 20px;
+}
+
+/* 货币型基金卡片样式 */
+.monetary-fund-card {
+  background-color: rgba(120, 82, 238, 0.05);  /* 浅紫色背景 */
+  border-left: 3px solid #7852ee;  /* 紫色左边框 */
+}
+
+/* 暗色模式下的货币型基金卡片 */
+.dark-theme .monetary-fund-card {
+  background-color: rgba(120, 82, 238, 0.1);  /* 暗色模式下稍微深一点的紫色 */
 }
 </style>
