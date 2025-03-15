@@ -6,8 +6,7 @@ CREATE TABLE funds (
     last_update_time DATETIME,
     buy_fee REAL DEFAULT 0,
     fund_type TEXT,  -- 新增字段：基金类型
-    target_investment REAL DEFAULT 0,  -- 新增字段：目标投入金额
-    investment_strategy TEXT,  -- 新增字段：投资策略
+    target_investment REAL DEFAULT 0,  -- 目标仓位百分比（0-100）
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

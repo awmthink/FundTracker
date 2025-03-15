@@ -1,61 +1,24 @@
 <template>
   <div>
-    <el-dialog
-      title="基金设置"
-      v-model="dialogVisible"
-      width="960px"
-      :close-on-click-modal="false"
-      :destroy-on-close="true"
-    >
+    <el-dialog title="基金设置" v-model="dialogVisible" width="960px" :close-on-click-modal="false"
+      :destroy-on-close="true">
       <div class="fund-settings">
         <!-- 基金列表表格 -->
-        <el-table 
-          :data="funds" 
-          style="width: 100%; margin-bottom: 20px"
-          max-height="400px"
-          border
-        >
-          <el-table-column 
-            prop="fund_code" 
-            label="基金代码" 
-            width="120" 
-            align="center"
-          />
-          <el-table-column 
-            prop="fund_name" 
-            label="基金名称" 
-            min-width="200" 
-            align="center"
-          />
-          <el-table-column 
-            prop="fund_type" 
-            label="基金类型" 
-            min-width="150" 
-            align="center"
-          />
-          <el-table-column 
-            label="买入费率(%)" 
-            width="120" 
-            align="center"
-          >
+        <el-table :data="funds" style="width: 100%; margin-bottom: 20px" max-height="400px" border>
+          <el-table-column prop="fund_code" label="基金代码" width="120" align="center" />
+          <el-table-column prop="fund_name" label="基金名称" min-width="200" align="center" />
+          <el-table-column prop="fund_type" label="基金类型" min-width="150" align="center" />
+          <el-table-column label="买入费率(%)" width="120" align="center">
             <template #default="scope">
               {{ scope.row.buy_fee }}
             </template>
           </el-table-column>
-          <el-table-column 
-            label="目标投入" 
-            width="120" 
-            align="center"
-          >
+          <el-table-column label="目标仓位 (%)" width="120" align="center">
             <template #default="scope">
-              {{ formatCurrency(scope.row.target_investment) }}
+              {{ formatNumber(scope.row.target_investment) }}
             </template>
           </el-table-column>
-          <el-table-column 
-            label="操作" 
-            width="150" 
-            align="center"
-          >
+          <el-table-column label="操作" width="150" align="center">
             <template #default="scope">
               <el-button size="small" type="primary" @click="editFund(scope.row)">
                 编辑
@@ -68,78 +31,35 @@
         </el-table>
 
         <!-- 添加/编辑基金表单 -->
-        <el-form
-          ref="fundForm"
-          :model="currentFund"
-          :rules="rules"
-          label-width="120px"
-          style="max-width: 500px; margin: 0 auto;"
-        >
+        <el-form ref="fundForm" :model="currentFund" :rules="rules" label-width="120px"
+          style="max-width: 500px; margin: 0 auto;">
           <el-form-item label="基金代码" prop="fund_code">
-            <el-input 
-              v-model="currentFund.fund_code" 
-              style="width: 180px"
-              @blur="handleFundCodeBlur"
-            />
+            <el-input v-model="currentFund.fund_code" style="width: 180px" @blur="handleFundCodeBlur" />
           </el-form-item>
-          
+
           <el-form-item label="基金名称" prop="fund_name">
-            <el-input 
-              v-model="currentFund.fund_name" 
-              style="width: 300px"
-              disabled
-              placeholder="基金名称将自动获取"
-            >
+            <el-input v-model="currentFund.fund_name" style="width: 300px" disabled placeholder="基金名称将自动获取">
               <template #append>
-                <el-button 
-                  v-if="currentFund.fund_code && !currentFund.fund_name"
-                  @click="handleFundCodeBlur"
-                  :loading="loadingFundInfo"
-                >
+                <el-button v-if="currentFund.fund_code && !currentFund.fund_name" @click="handleFundCodeBlur"
+                  :loading="loadingFundInfo">
                   重新获取
                 </el-button>
               </template>
             </el-input>
           </el-form-item>
-          
+
           <el-form-item label="基金类型" prop="fund_type">
-            <el-input 
-              v-model="currentFund.fund_type" 
-              style="width: 300px"
-              disabled
-              placeholder="基金类型将自动获取"
-            />
+            <el-input v-model="currentFund.fund_type" style="width: 300px" disabled placeholder="基金类型将自动获取" />
           </el-form-item>
-          
+
           <el-form-item label="买入费率(%)" prop="buy_fee">
-            <el-input-number
-              v-model="currentFund.buy_fee"
-              :precision="4"
-              :step="0.0001"
-              :min="0"
-              :max="5"
-              style="width: 180px"
-            />
+            <el-input-number v-model="currentFund.buy_fee" :precision="4" :step="0.0001" :min="0" :max="5"
+              style="width: 180px" />
           </el-form-item>
-          
-          <el-form-item label="目标投入" prop="target_investment">
-            <el-input-number
-              v-model="currentFund.target_investment"
-              :precision="2"
-              :step="1000"
-              :min="0"
-              style="width: 180px"
-            />
-          </el-form-item>
-          
-          <el-form-item label="投资策略" prop="investment_strategy">
-            <el-input
-              v-model="currentFund.investment_strategy"
-              type="textarea"
-              :rows="4"
-              style="width: 300px"
-              placeholder="请输入投资策略（可选）"
-            />
+
+          <el-form-item label="目标仓位 (%)" prop="target_investment">
+            <el-input-number v-model="currentFund.target_investment" :precision="2" :step="1" :min="0" :max="100"
+              style="width: 180px" />
           </el-form-item>
         </el-form>
 
@@ -167,7 +87,6 @@ export default {
         fund_type: '',
         buy_fee: 0,
         target_investment: 0,
-        investment_strategy: '',
       },
       isEditing: false,
       rules: {
@@ -182,7 +101,8 @@ export default {
           { required: true, message: '请输入买入费率', trigger: 'blur' }
         ],
         target_investment: [
-          { required: true, message: '请输入目标投入金额', trigger: 'blur' }
+          { required: true, message: '请输入目标仓位百分比', trigger: 'blur' },
+          { type: 'number', min: 0, max: 100, message: '目标仓位必须在0-100之间', trigger: 'blur' }
         ],
       },
       loading: false,
@@ -203,7 +123,6 @@ export default {
             fund_type: fund.fund_type || '未知',
             buy_fee: (fund.buy_fee * 100).toFixed(4),
             target_investment: fund.target_investment || 0,
-            investment_strategy: fund.investment_strategy || ''
           }));
         } else {
           throw new Error(response.data.message || '未知错误');
@@ -221,7 +140,7 @@ export default {
     },
     async fetchFundInfo() {
       if (!this.currentFund.fund_code) return
-      
+
       try {
         const response = await fundApi.getFundNav(this.currentFund.fund_code)
         if (response.data.status === 'success') {
@@ -241,7 +160,6 @@ export default {
         fund_type: fund.fund_type || '',
         buy_fee: parseFloat(fund.buy_fee),
         target_investment: fund.target_investment || 0,
-        investment_strategy: fund.investment_strategy || ''
       };
     },
     async handleDelete(fund) {
@@ -275,7 +193,7 @@ export default {
           ...this.currentFund,
           buy_fee: this.currentFund.buy_fee / 100
         };
-        
+
         const response = await fundApi.saveFundSettings(fundData);
         if (response.data.status === 'success') {
           this.$message.success('保存成功');
@@ -297,7 +215,6 @@ export default {
         fund_type: '',
         buy_fee: 0,
         target_investment: 0,
-        investment_strategy: '',
       };
       if (this.$refs.fundForm) {
         this.$refs.fundForm.resetFields();
@@ -306,7 +223,7 @@ export default {
     async handleFundCodeBlur() {
       const fundCode = this.currentFund.fund_code.trim();
       if (!fundCode) return;
-      
+
       // 检查基金代码格式
       if (!/^\d{6}$/.test(fundCode)) {
         this.$message.warning('请输入6位数字的基金代码');
@@ -337,12 +254,9 @@ export default {
       this.resetForm();
       this.dialogVisible = false;
     },
-    formatCurrency(value) {
-      return new Intl.NumberFormat('zh-CN', {
-        style: 'currency',
-        currency: 'CNY',
-        minimumFractionDigits: 2
-      }).format(value);
+    formatNumber(value) {
+      if (value === null || value === undefined) return '--'
+      return Number(value).toFixed(2)
     }
   },
   mounted() {
@@ -375,6 +289,7 @@ export default {
 }
 
 :deep(.el-input.is-disabled .el-input__inner) {
-  color: #606266;  /* 让禁用状态的输入框文字颜色更清晰 */
+  color: #606266;
+  /* 让禁用状态的输入框文字颜色更清晰 */
 }
-</style> 
+</style>

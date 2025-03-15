@@ -68,20 +68,25 @@ class FundService:
             return None
 
     def fetch_current_nav(self, fund_code: str) -> Optional[Dict[str, Any]]:
-        """获取基金当前净值，统一读取前1天的净值，如遇周末或公休假日则递归读取上一个工作日的净值"""
-        # 最大前向递归次数为10天
-        MAX_DAYS_BACK = 10
+        # 首先尝试获取今天的净值
+        today_nav = self.get_historical_nav(
+            fund_code, datetime.now().strftime("%Y-%m-%d")
+        )
+        if today_nav:
+            return {
+                "nav": today_nav,
+                "update_time": datetime.now().strftime("%Y-%m-%d"),
+            }
 
-        # 尝试获取最近10个工作日内的净值
-        for days_back in range(1, MAX_DAYS_BACK + 1):
-            check_date = (datetime.now() - timedelta(days=days_back)).strftime(
-                "%Y-%m-%d"
-            )
-            historical_nav = self.get_historical_nav(fund_code, check_date)
-            if historical_nav:
-                return {"nav": historical_nav, "update_time": check_date}
+        # 如果今天没有净值，则通过 fetch_fund_info 读取最新的净值估算的净值
+        fund_info = self.fetch_fund_info(fund_code)
+        if fund_info:
+            return {
+                "nav": fund_info["estimated_value"],
+                "update_time": fund_info["estimated_time"],
+            }
 
-        # 如果历史净值获取失败，直接返回None
+        # 如果以上都失败，则返回None
         return None
 
     def get_historical_nav(self, fund_code: str, date: str) -> Optional[float]:
@@ -213,7 +218,7 @@ class FundService:
 
             # 构建查询语句，添加截止日期条件
             query = """
-                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time, f.target_investment, f.investment_strategy,
+                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time, f.target_investment,
                        t.transaction_type, t.amount, t.nav, t.shares, t.transaction_date
                 FROM funds f
                 INNER JOIN fund_transactions t ON f.fund_code = t.fund_code
@@ -237,7 +242,6 @@ class FundService:
                         "last_update_time": row["last_update_time"],
                         "fund_type": row["fund_type"] or "未知",
                         "target_investment": row["target_investment"] or 0,
-                        "investment_strategy": row["investment_strategy"] or "",
                         "transactions": [],
                     }
 
@@ -253,6 +257,25 @@ class FundService:
 
             # 计算每个基金的持仓信息
             holdings = []
+            try:
+                total_market_value = sum(
+                    fund_data["current_nav"]
+                    * sum(
+                        tx["shares"]
+                        for tx in fund_data["transactions"]
+                        if tx["transaction_type"] == "buy"
+                    )
+                    - sum(
+                        tx["shares"]
+                        for tx in fund_data["transactions"]
+                        if tx["transaction_type"] == "sell"
+                    )
+                    for fund_data in funds_data.values()
+                )
+            except Exception as e:
+                print(f"计算总市值失败: {str(e)}")
+                total_market_value = 0
+
             for fund_code, fund_data in funds_data.items():
                 # 检查是否为货币型基金
                 is_money_fund = "货币" in (fund_data["fund_type"] or "")
@@ -327,8 +350,14 @@ class FundService:
                         "last_sell_date": last_sell_date,
                         "since_last_buy_rate": 0,  # 货币基金涨幅为0
                         "since_last_sell_rate": 0,  # 货币基金涨幅为0
-                        "target_investment": fund_data["target_investment"],
-                        "investment_strategy": fund_data["investment_strategy"],
+                        "target_investment": fund_data[
+                            "target_investment"
+                        ],  # 目标仓位百分比
+                        "actual_position": (
+                            (market_value / total_market_value * 100)
+                            if total_market_value > 0
+                            else 0
+                        ),  # 实际仓位百分比
                     }
                 else:
                     # 非货币型基金正常计算
@@ -375,8 +404,14 @@ class FundService:
                         "last_sell_date": last_sell_date,
                         "since_last_buy_rate": since_last_buy_rate,
                         "since_last_sell_rate": since_last_sell_rate,
-                        "target_investment": fund_data["target_investment"],
-                        "investment_strategy": fund_data["investment_strategy"],
+                        "target_investment": fund_data[
+                            "target_investment"
+                        ],  # 目标仓位百分比
+                        "actual_position": (
+                            (market_value / total_market_value * 100)
+                            if total_market_value > 0
+                            else 0
+                        ),  # 实际仓位百分比
                     }
 
                 # 只添加有持仓的基金
@@ -432,7 +467,7 @@ class FundService:
                     """
                     UPDATE funds 
                     SET fund_name = ?, buy_fee = ?, fund_type = ?, target_investment = ?, 
-                        investment_strategy = ?, updated_at = CURRENT_TIMESTAMP
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE fund_code = ?
                 """,
                     (
@@ -440,7 +475,6 @@ class FundService:
                         data["buy_fee"],
                         data["fund_type"],
                         data.get("target_investment", 0),
-                        data.get("investment_strategy", ""),
                         data["fund_code"],
                     ),
                 )
@@ -448,8 +482,8 @@ class FundService:
                 # 插入新基金
                 cursor.execute(
                     """
-                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, target_investment, investment_strategy)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, target_investment)
+                    VALUES (?, ?, ?, ?, ?)
                 """,
                     (
                         data["fund_code"],
@@ -457,7 +491,6 @@ class FundService:
                         data["buy_fee"],
                         data["fund_type"],
                         data.get("target_investment", 0),
-                        data.get("investment_strategy", ""),
                     ),
                 )
 
@@ -882,7 +915,7 @@ class FundService:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT fund_code, fund_name, buy_fee, fund_type, target_investment, investment_strategy
+                SELECT fund_code, fund_name, buy_fee, fund_type, target_investment
                 FROM funds
                 ORDER BY fund_code
             """
@@ -899,7 +932,6 @@ class FundService:
                         if row["target_investment"] is not None
                         else 0
                     ),
-                    "investment_strategy": row["investment_strategy"],
                 }
                 for row in settings
             ]
