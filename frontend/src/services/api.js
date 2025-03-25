@@ -40,58 +40,115 @@ axiosInstance.interceptors.response.use(
 );
 
 export const fundApi = {
-    addTransaction: async (data) => {
+    // 基金基本信息相关接口
+    getFundInfo: async (fundCode) => {
         try {
-            return await axiosInstance.post('/fund/transaction', data);
+            return await axiosInstance.get(`/fund/funds/${fundCode}`);
         } catch (error) {
-            console.error('添加交易失败:', error);
+            console.error('获取基金信息失败:', error);
             throw error;
         }
     },
-    getHoldings: async () => {
+
+    // 净值相关接口
+    getCurrentNav: async (fundCode) => {
         try {
-            return await axiosInstance.get('/fund/holdings');
+            return await axiosInstance.get(`/fund/nav/${fundCode}`);
         } catch (error) {
-            console.error('获取持仓失败:', error);
+            console.error('获取当前净值失败:', error);
             throw error;
         }
     },
-    updateNav: async (data) => {
+
+    getHistoricalNav: async (fundCode, date) => {
         try {
-            return await axiosInstance.post('/fund/update-nav', data);
+            return await axiosInstance.get(`/fund/nav/${fundCode}/history/${date}`);
+        } catch (error) {
+            console.error('获取历史净值失败:', error);
+            throw error;
+        }
+    },
+
+    updateNav: async (fundCode, data) => {
+        try {
+            return await axiosInstance.post(`/fund/nav/${fundCode}`, data);
         } catch (error) {
             console.error('更新净值失败:', error);
             throw error;
         }
     },
-    getFundNav: async (fundCode) => {
+
+    updateAllNavs: async (fundCodes = null) => {
         try {
-            console.log('Requesting fund info for:', fundCode);
-            const response = await axiosInstance.get(`/fund/nav/${fundCode}`);
-            console.log('Fund info response:', response);
-            return response;
+            const data = fundCodes ? { fund_codes: fundCodes } : {};
+            return await axiosInstance.post('/fund/nav/batch/update', data);
         } catch (error) {
-            console.error('获取基金信息失败:', error.response || error);
+            console.error('批量更新净值失败:', error);
             throw error;
         }
     },
 
-    getFundSettings: async () => {
+    // 交易相关接口
+    getTransactions: async (filters) => {
+        try {
+            const params = new URLSearchParams(filters);
+            return await axiosInstance.get(`/fund/transactions?${params}`);
+        } catch (error) {
+            console.error('获取交易记录失败:', error);
+            throw error;
+        }
+    },
+
+    addTransaction: async (data) => {
+        try {
+            return await axiosInstance.post('/fund/transactions', data);
+        } catch (error) {
+            console.error('添加交易失败:', error);
+            throw error;
+        }
+    },
+
+    updateTransaction: async (transactionId, data) => {
+        try {
+            const updateData = {
+                fund_code: data.fund_code,
+                fund_name: data.fund_name,
+                transaction_type: data.transaction_type,
+                amount: parseFloat(data.amount),
+                nav: parseFloat(data.nav),
+                transaction_date: data.transaction_date
+            };
+            return await axiosInstance.put(`/fund/transactions/${transactionId}`, updateData);
+        } catch (error) {
+            console.error('更新交易记录失败:', error);
+            throw error;
+        }
+    },
+
+    deleteTransaction: async (transactionId) => {
+        try {
+            return await axiosInstance.delete(`/fund/transactions/${transactionId}`);
+        } catch (error) {
+            console.error('删除交易记录失败:', error);
+            throw error;
+        }
+    },
+
+    // 基金设置相关接口
+    getAllFundSettings: async () => {
         try {
             return await axiosInstance.get('/fund/settings');
         } catch (error) {
-            console.error('获取基金设置失败:', error);
+            console.error('获取所有基金设置失败:', error);
             throw error;
         }
     },
 
-    getAllFundSettings: async () => {
+    getFundFees: async (fundCode) => {
         try {
-            const response = await axiosInstance.get('/fund/settings');
-            console.log('API Response:', response);
-            return response;
+            return await axiosInstance.get(`/fund/settings/${fundCode}`);
         } catch (error) {
-            console.error('获取基金设置失败:', error);
+            console.error('获取基金费率失败:', error);
             throw error;
         }
     },
@@ -114,78 +171,14 @@ export const fundApi = {
         }
     },
 
-    getHistoricalNav: async (fundCode, date) => {
+    // 持仓相关接口
+    getHoldings: async (cutoffDate = null) => {
         try {
-            return await axiosInstance.get(`/fund/historical-nav/${fundCode}/${date}`);
+            const params = cutoffDate ? new URLSearchParams({ cutoff_date: cutoffDate }) : '';
+            const url = `/fund/holdings${params ? '?' + params : ''}`;
+            return await axiosInstance.get(url);
         } catch (error) {
-            console.error('获取历史净值失败:', error);
-            throw error;
-        }
-    },
-
-    getFundFees: async (fundCode) => {
-        try {
-            return await axiosInstance.get(`/fund/settings/${fundCode}`);
-        } catch (error) {
-            console.error('获取基金费率失败:', error);
-            throw error;
-        }
-    },
-
-    // 获取最新净值
-    getCurrentNav: async (fundCode) => {
-        try {
-            return await axiosInstance.get(`/fund/current-nav/${fundCode}`);
-        } catch (error) {
-            console.error('获取最新净值失败:', error);
-            throw error;
-        }
-    },
-    
-    // 更新所有基金的最新净值
-    updateAllNavs: async () => {
-        try {
-            return await axiosInstance.post('/fund/update-all-navs');
-        } catch (error) {
-            console.error('更新所有净值失败:', error);
-            throw error;
-        }
-    },
-
-    getTransactions: async (filters) => {
-        try {
-            const params = new URLSearchParams(filters);
-            return await axiosInstance.get(`/fund/transactions?${params}`);
-        } catch (error) {
-            console.error('获取交易记录失败:', error);
-            throw error;
-        }
-    },
-
-    deleteTransaction: async (transactionId) => {
-        try {
-            return await axiosInstance.delete(`/fund/transaction/${transactionId}`);
-        } catch (error) {
-            console.error('删除交易记录失败:', error);
-            throw error;
-        }
-    },
-
-    updateTransaction: async (transactionId, data) => {
-        try {
-            // 确保发送的数据格式正确
-            const updateData = {
-                fund_code: data.fund_code,
-                fund_name: data.fund_name,
-                transaction_type: data.transaction_type,
-                amount: parseFloat(data.amount),
-                nav: parseFloat(data.nav),
-                transaction_date: data.transaction_date
-            };
-            
-            return await axiosInstance.put(`/fund/transaction/${transactionId}`, updateData);
-        } catch (error) {
-            console.error('更新交易记录失败:', error);
+            console.error('获取持仓信息失败:', error);
             throw error;
         }
     }

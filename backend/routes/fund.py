@@ -20,138 +20,133 @@ def handle_exceptions(f):
     return decorated_function
 
 
-@fund_bp.route("/transaction", methods=["POST"])
+# 基金基本信息接口
+@fund_bp.route("/funds/<fund_code>", methods=["GET"])
 @handle_exceptions
-def add_transaction():
-    fund_service.add_transaction(request.json)
-    return jsonify({"status": "success", "message": "交易添加成功"})
+def get_fund_info(fund_code):
+    """获取基金基本信息"""
+    fund_info = fund_service.get_fund_info(fund_code)
+    return jsonify({"status": "success", "data": fund_info})
 
 
+# 净值相关接口
+@fund_bp.route("/nav/<fund_code>", methods=["GET", "POST"])
+@handle_exceptions
+def handle_fund_nav(fund_code):
+    """处理基金净值的获取和更新
+
+    GET: 获取基金当前净值
+    POST: 更新基金净值
+    """
+    if request.method == "GET":
+        nav_info = fund_service.fetch_current_nav(fund_code)
+        if nav_info:
+            return jsonify({"status": "success", "data": nav_info})
+        return jsonify({"status": "error", "message": "获取净值失败"}), 404
+    else:  # POST
+        data = request.get_json()
+        data["fund_code"] = fund_code  # 确保使用URL中的fund_code
+        fund_service.update_nav(data)
+        return jsonify({"status": "success", "message": "更新成功"})
+
+
+@fund_bp.route("/nav/<fund_code>/history/<date>", methods=["GET"])
+@handle_exceptions
+def get_historical_nav(fund_code, date):
+    """获取指定日期的基金净值"""
+    nav = fund_service.get_historical_nav(fund_code, date)
+    if nav:
+        return jsonify({"status": "success", "data": {"date": date, "nav": nav}})
+    return jsonify({"status": "error", "message": "未找到该日期的净值数据"}), 404
+
+
+@fund_bp.route("/nav/batch/update", methods=["POST"])
+@handle_exceptions
+def update_navs():
+    """批量更新基金净值
+
+    如果请求体中包含 fund_codes 列表，则只更新指定基金
+    否则更新所有基金
+    """
+    data = request.get_json()
+    if data and "fund_codes" in data:
+        result = fund_service.update_all_navs(data["fund_codes"])
+    else:
+        result = fund_service.update_all_navs()
+    return jsonify({"status": "success", "data": result})
+
+
+# 交易相关接口
+@fund_bp.route("/transactions", methods=["GET", "POST"])
+@handle_exceptions
+def handle_transactions():
+    """处理交易记录的查询和添加"""
+    if request.method == "GET":
+        filters = {
+            "fund_code": request.args.get("fund_code"),
+            "fund_name": request.args.get("fund_name"),
+            "start_date": request.args.get("start_date"),
+            "end_date": request.args.get("end_date"),
+            "transaction_type": request.args.get("transaction_type"),
+        }
+        transactions = fund_service.get_transactions(filters)
+        return jsonify({"status": "success", "data": transactions})
+    else:  # POST
+        fund_service.add_transaction(request.json)
+        return jsonify({"status": "success", "message": "交易添加成功"})
+
+
+@fund_bp.route("/transactions/<int:transaction_id>", methods=["PUT", "DELETE"])
+@handle_exceptions
+def handle_transaction(transaction_id):
+    """处理单个交易记录的更新和删除"""
+    if request.method == "PUT":
+        fund_service.update_transaction(transaction_id, request.json)
+        return jsonify({"status": "success", "message": "更新成功"})
+    else:  # DELETE
+        fund_service.delete_transaction(transaction_id)
+        return jsonify({"status": "success", "message": "删除成功"})
+
+
+# 基金设置相关接口
+@fund_bp.route("/settings", methods=["GET", "POST"])
+@handle_exceptions
+def handle_settings():
+    """处理基金设置的查询和添加"""
+    if request.method == "GET":
+        settings = fund_service.get_all_fund_settings()
+        return jsonify({"status": "success", "data": settings})
+    else:  # POST
+        fund_service.save_fund_settings(request.json)
+        return jsonify({"status": "success", "message": "保存成功"})
+
+
+@fund_bp.route("/settings/<fund_code>", methods=["GET", "DELETE"])
+@handle_exceptions
+def handle_fund_settings(fund_code):
+    """处理单个基金设置的查询和删除"""
+    if request.method == "GET":
+        fees = fund_service.get_fund_fees(fund_code)
+        if fees:
+            return jsonify({"status": "success", "data": fees})
+        return jsonify({"status": "error", "message": "未找到该基金的费率设置"}), 404
+    else:  # DELETE
+        fund_service.delete_fund_settings(fund_code)
+        return jsonify({"status": "success", "message": "删除成功"})
+
+
+# 持仓相关接口
 @fund_bp.route("/holdings", methods=["GET"])
 @handle_exceptions
 def get_holdings():
     """获取基金持仓信息"""
-    holdings = fund_service.get_holdings()
+    cutoff_date = request.args.get("cutoff_date")  # 可选参数：截止日期
+    holdings = fund_service.get_holdings(cutoff_date)
     return jsonify({"status": "success", "data": holdings})
 
 
-@fund_bp.route("/update-nav", methods=["POST"])
-@handle_exceptions
-def update_nav():
-    fund_service.update_nav(request.json)
-    return jsonify({"status": "success", "message": "更新成功"})
-
-
-# 添加一个测试路由
+# 测试路由
 @fund_bp.route("/test", methods=["GET"])
 @handle_exceptions
 def test():
     return jsonify({"status": "success", "message": "API is working"})
-
-
-@fund_bp.route("/nav/<fund_code>", methods=["GET"])
-@handle_exceptions
-def get_fund_nav(fund_code):
-    """获取基金净值和基本信息"""
-    # 使用整合后的方法获取基金信息
-    fund_info = fund_service.get_fund_info(fund_code)
-    # 即使没有完整信息，也返回已获取的部分信息
-    return jsonify({"status": "success", "data": fund_info})
-
-
-@fund_bp.route("/historical-nav/<fund_code>/<date>", methods=["GET"])
-@handle_exceptions
-def get_historical_nav(fund_code, date):
-    # 直接使用 fund_service 中的方法获取历史净值
-    nav = fund_service.get_historical_nav(fund_code, date)
-
-    if nav:
-        return jsonify({"status": "success", "data": {"date": date, "nav": nav}})
-    else:
-        # 如果没有找到历史净值，尝试获取当前净值
-        return get_fund_nav(fund_code)
-
-
-@fund_bp.route("/settings", methods=["GET"])
-@handle_exceptions
-def get_all_fund_settings():
-    """获取所有基金设置"""
-    settings = fund_service.get_all_fund_settings()
-    return jsonify({"status": "success", "data": settings})
-
-
-@fund_bp.route("/settings", methods=["POST"])
-@handle_exceptions
-def save_fund_settings():
-    """保存基金设置"""
-    data = request.json
-    fund_service.save_fund_settings(data)
-    return jsonify({"status": "success", "message": "保存成功"})
-
-
-@fund_bp.route("/settings/<fund_code>", methods=["DELETE"])
-@handle_exceptions
-def delete_fund_settings(fund_code):
-    """删除基金设置"""
-    fund_service.delete_fund_settings(fund_code)
-    return jsonify({"status": "success", "message": "删除成功"})
-
-
-@fund_bp.route("/settings/<fund_code>", methods=["GET"])
-@handle_exceptions
-def get_fund_fees(fund_code):
-    """获取指定基金的费率设置"""
-    fees = fund_service.get_fund_fees(fund_code)
-    if fees:
-        return jsonify({"status": "success", "data": fees})
-    return jsonify({"status": "error", "message": "未找到该基金的费率设置"}), 404
-
-
-@fund_bp.route("/current-nav/<fund_code>", methods=["GET"])
-@handle_exceptions
-def get_current_nav(fund_code):
-    """获取基金当前净值"""
-    nav_info = fund_service.fetch_current_nav(fund_code)
-    if nav_info:
-        return jsonify({"status": "success", "data": nav_info})
-    return jsonify({"status": "error", "message": "获取净值失败"}), 404
-
-
-@fund_bp.route("/update-all-navs", methods=["POST"])
-@handle_exceptions
-def update_all_navs():
-    """更新所有基金的最新净值"""
-    result = fund_service.update_all_navs()
-    return jsonify({"status": "success", "data": result})
-
-
-@fund_bp.route("/transactions", methods=["GET"])
-@handle_exceptions
-def get_transactions():
-    """获取交易记录"""
-    filters = {
-        "fund_code": request.args.get("fund_code"),
-        "fund_name": request.args.get("fund_name"),
-        "start_date": request.args.get("start_date"),
-        "end_date": request.args.get("end_date"),
-        "transaction_type": request.args.get("transaction_type"),
-    }
-    transactions = fund_service.get_transactions(filters)
-    return jsonify({"status": "success", "data": transactions})
-
-
-@fund_bp.route("/transaction/<int:transaction_id>", methods=["DELETE"])
-@handle_exceptions
-def delete_transaction(transaction_id):
-    """删除交易记录"""
-    fund_service.delete_transaction(transaction_id)
-    return jsonify({"status": "success", "message": "删除成功"})
-
-
-@fund_bp.route("/transaction/<int:transaction_id>", methods=["PUT"])
-@handle_exceptions
-def update_transaction(transaction_id):
-    """更新交易记录"""
-    data = request.get_json()
-    fund_service.update_transaction(transaction_id, data)
-    return jsonify({"status": "success", "message": "更新成功"})

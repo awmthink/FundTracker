@@ -1,122 +1,74 @@
 import sqlite3
-from flask import jsonify
 from datetime import datetime, timedelta
-import requests
-import re
-import json
-import html
-from typing import Optional, Dict, Any
-import time
+from typing import Optional, Dict, Any, List
+from services.eastmoney_api import get_fund_info as api_get_fund_info
+from services.eastmoney_api import get_fund_estimate, get_fund_history_netvalue
 
 
 class FundService:
     def __init__(self):
         self.db_name = "finance.db"
-        self.base_urls = {
-            "fund_info": "http://fund.eastmoney.com/pingzhongdata/{}.js",
-            "historical_nav": "http://fund.eastmoney.com/f10/F10DataApi.aspx",
-        }
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Referer": "http://fund.eastmoney.com/",
-            "Accept": "*/*",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        }
-
-    def _make_request(self, url: str, params: Optional[Dict] = None) -> Optional[str]:
-        """统一的HTTP请求处理"""
-        try:
-            response = requests.get(url, params=params, headers=self.headers, timeout=5)
-            if response.status_code == 200:
-                return response.text
-            print(f"Request failed with status code: {response.status_code}")
-            return None
-        except Exception as e:
-            print(f"Request error: {str(e)}")
-            return None
 
     def fetch_fund_info(self, fund_code: str) -> Optional[Dict[str, Any]]:
-        """获取基金基本信息，包括名称、净值、估算值和估算增长率"""
-        url = f"https://fundgz.1234567.com.cn/js/{fund_code}.js?rt=1589463125600"
-        content = self._make_request(url)
+        """获取基金基本信息，包括名称、净值、类型等基础信息
 
-        if not content:
+        Args:
+            fund_code: 基金代码
+
+        Returns:
+            包含基金信息的字典，包括：
+            - code: 基金代码
+            - name: 基金名称
+            - fund_type: 基金类型
+            - net_value_date: 净值日期
+            - unit_net_value: 单位净值
+            - buy_fee: 买入费率（如果能获取到）
+        """
+        # 获取基金估值信息
+        estimate_info = get_fund_estimate(fund_code)
+        if not estimate_info:
             return None
 
-        # Remove the JSONP wrapper
-        jsonp_prefix = "jsonpgz("
-        jsonp_suffix = ");"
-        if content.startswith(jsonp_prefix) and content.endswith(jsonp_suffix):
-            json_str = content[len(jsonp_prefix) : -len(jsonp_suffix)]
-        else:
-            print("Invalid JSONP format")
-            return None
+        # 获取基金详细信息（包括类型等）
+        fund_detail = api_get_fund_info(fund_code)
 
-        try:
-            fund_data = json.loads(json_str)
-            return {
-                "code": fund_data.get("fundcode"),
-                "name": fund_data.get("name"),
-                "net_value_date": fund_data.get("jzrq"),
-                "unit_net_value": fund_data.get("dwjz"),
-                "estimated_value": fund_data.get("gsz"),
-                "estimated_growth_rate": fund_data.get("gszzl"),
-                "estimated_time": fund_data.get("gztime"),
-            }
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error: {str(e)}")
-            return None
+        result = {
+            "code": fund_code,
+            "name": estimate_info.get("name", ""),
+            "fund_type": fund_detail.get("type", "未知") if fund_detail else "未知",
+            "net_value_date": estimate_info.get("last_netvalue_date"),
+            "unit_net_value": estimate_info.get("last_netvalue"),
+            "buy_fee": fund_detail.get("purchase_fee", 0) if fund_detail else 0,
+        }
+
+        return result
 
     def fetch_current_nav(self, fund_code: str) -> Optional[Dict[str, Any]]:
-        # 首先尝试获取今天的净值
-        today_nav = self.get_historical_nav(
-            fund_code, datetime.now().strftime("%Y-%m-%d")
-        )
-        if today_nav:
+        """获取基金当前净值"""
+        estimate_info = get_fund_estimate(fund_code)
+        if not estimate_info:
+            return None
+
+        # 如果有实时估值，使用估值
+        if estimate_info.get("estimate_value"):
             return {
-                "nav": today_nav,
-                "update_time": datetime.now().strftime("%Y-%m-%d"),
+                "nav": estimate_info["estimate_value"],
+                "update_time": estimate_info["estimate_time"],
+            }
+        # 否则使用最新净值
+        elif estimate_info.get("last_netvalue"):
+            return {
+                "nav": estimate_info["last_netvalue"],
+                "update_time": estimate_info["last_netvalue_date"],
             }
 
-        # 如果今天没有净值，则通过 fetch_fund_info 读取最新的净值估算的净值
-        fund_info = self.fetch_fund_info(fund_code)
-        if fund_info:
-            return {
-                "nav": fund_info["estimated_value"],
-                "update_time": fund_info["estimated_time"],
-            }
-
-        # 如果以上都失败，则返回None
         return None
 
     def get_historical_nav(self, fund_code: str, date: str) -> Optional[float]:
         """获取历史净值"""
-        params = {
-            "type": "lsjz",
-            "code": fund_code,
-            "page": 1,
-            "per": 1,
-            "sdate": date,
-            "edate": date,
-        }
-
-        content = self._make_request(self.base_urls["historical_nav"], params)
-        if not content:
-            return None
-
-        pattern = r"<td>(\d{4}-\d{2}-\d{2})</td><td.*?>(.*?)</td>"
-        matches = re.findall(pattern, content)
-
-        for date_str, nav_str in matches:
-            if date_str == date:
-                try:
-                    return float(nav_str)
-                except ValueError:
-                    print(f"NAV conversion failed: {nav_str}")
-                    return None
-
-        # 如果没有匹配到数据，直接返回None
-        print(f"No historical NAV found for fund {fund_code} on date {date}")
+        nav_data = get_fund_history_netvalue(fund_code, date)
+        if nav_data:
+            return float(nav_data["unit_value"])
         return None
 
     def _update_fund_nav(self, fund_code: str, nav: float, update_time: str) -> None:
@@ -202,7 +154,7 @@ class FundService:
         finally:
             conn.close()
 
-    def get_holdings(self, cutoff_date=None):
+    def get_holdings(self, cutoff_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """获取基金持仓信息
 
         Args:
@@ -227,7 +179,6 @@ class FundService:
             """
 
             cursor.execute(query, [cutoff_date])
-
             transactions = cursor.fetchall()
 
             # 按基金代码分组
@@ -537,45 +488,38 @@ class FundService:
         finally:
             conn.close()
 
-    def get_fund_fees(self, fund_code):
-        """获取指定基金的费率设置"""
-        conn = self.get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT buy_fee
-                FROM funds
-                WHERE fund_code = ?
-            """,
-                (fund_code,),
-            )
-            row = cursor.fetchone()
-            if row:
-                return {"buy_fee": float(row["buy_fee"])}
-            return None
-        finally:
-            conn.close()
+    def update_all_navs(self, fund_codes: Optional[List[str]] = None) -> Dict[str, Any]:
+        """更新基金的最新净值
 
-    def update_all_navs(self):
-        """更新所有基金的最新净值（前一个工作日）"""
+        Args:
+            fund_codes: 可选，要更新的基金代码列表。如果为None，则更新所有基金
+
+        Returns:
+            包含更新结果的字典
+        """
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
-            # 获取所有基金代码
-            cursor.execute("SELECT fund_code FROM funds")
-            funds = cursor.fetchall()
+            # 获取需要更新的基金列表
+            if fund_codes:
+                cursor.execute(
+                    "SELECT fund_code FROM funds WHERE fund_code IN ({})".format(
+                        ",".join("?" * len(fund_codes))
+                    ),
+                    fund_codes,
+                )
+            else:
+                cursor.execute("SELECT fund_code FROM funds")
 
+            funds = cursor.fetchall()
             updated_count = 0
+
             for fund in funds:
                 fund_code = fund["fund_code"]
-
-                # 尝试获取最新净值
                 result = self.fetch_current_nav(fund_code)
 
                 if result:
-                    # 更新数据库中的净值
                     cursor.execute(
                         """
                         UPDATE funds 
@@ -588,10 +532,14 @@ class FundService:
                     conn.commit()
                     updated_count += 1
 
-            return {"total": len(funds), "updated": updated_count}
+            return {
+                "total": len(funds),
+                "updated": updated_count,
+                "failed": len(funds) - updated_count,
+            }
 
         except Exception as e:
-            print(f"Error updating all NAVs: {str(e)}")
+            print(f"Error updating NAVs: {str(e)}")
             raise
         finally:
             if "conn" in locals():
@@ -766,137 +714,74 @@ class FundService:
         finally:
             conn.close()
 
-    def get_fund_type(self, fund_code: str) -> Optional[str]:
-        """
-        获取基金类型信息
-        Args:
-            fund_code: 基金代码
-        Returns:
-            基金类型字符串，如果获取失败返回None
-        """
-        try:
-            # 尝试从天天基金网获取
-            for attempt in range(2):  # 最多尝试2次
-                try:
-                    # 使用天天基金网的API
-                    url = f"http://fund.eastmoney.com/{fund_code}.html"
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                    }
-                    response = requests.get(url, headers=headers, timeout=10)
-                    response.encoding = "utf-8"
-                    html_content = response.text
-
-                    # 提取基金类型
-                    type_pattern = r"类型：(.*?)(?:\s*\||</td>)"
-                    fund_type = re.search(type_pattern, html_content)
-                    if not fund_type:
-                        # 尝试备用模式
-                        type_pattern_alt = (
-                            r"<td[^>]*>基金类型：?</td>\s*<td[^>]*>(.*?)</td>"
-                        )
-                        fund_type = re.search(type_pattern_alt, html_content)
-                        if not fund_type:
-                            # 再尝试一种模式
-                            type_pattern_alt2 = r'<td class="tb_head">基金类型：</td>[\s\S]*?<td[^>]*>(.*?)</td>'
-                            fund_type = re.search(type_pattern_alt2, html_content)
-                            if not fund_type:
-                                if attempt == 0:  # 第一次尝试失败，等待后重试
-                                    time.sleep(1)
-                                    continue
-                                return None
-
-                    fund_type = fund_type.group(1).strip()
-                    # 清除类型中的HTML标签
-                    fund_type = re.sub(r"<.*?>", "", fund_type)
-                    # 解码HTML实体
-                    fund_type = html.unescape(fund_type)
-                    # 清除多余的空白字符
-                    fund_type = re.sub(r"\s+", " ", fund_type).strip()
-
-                    return fund_type
-
-                except requests.RequestException:
-                    if attempt == 0:  # 第一次尝试失败，等待后重试
-                        time.sleep(1)
-                        continue
-                    return None
-
-            # 如果所有尝试都失败
-            return None
-        except Exception as e:
-            print(f"获取基金类型失败: {str(e)}")
-            return None
-
     def get_fund_info(self, fund_code: str) -> Dict[str, Any]:
         """
-        获取基金的完整信息，包括名称、净值和类型
+        获取基金的完整信息，包括名称、净值、类型和费率
         Args:
             fund_code: 基金代码
         Returns:
-            包含基金信息的字典
+            包含基金信息的字典，包括：
+            - code: 基金代码
+            - name: 基金名称
+            - fund_type: 基金类型
+            - nav: 最新净值
+            - update_time: 净值更新时间
+            - buy_fee: 买入费率
         """
+        conn = None
         try:
-            # 首先检查数据库中是否已有该基金信息
-            conn = self.get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT fund_name, fund_type FROM funds WHERE fund_code = ?",
-                (fund_code,),
-            )
-            fund_info = cursor.fetchone()
-
-            # 获取最新净值信息
-            nav_info = self.fetch_current_nav(fund_code)
-
             # 准备返回结果
             result = {
                 "code": fund_code,
                 "name": "",
                 "fund_type": "未知",
                 "nav": 0,
-                "date": "",
+                "update_time": "",
+                "buy_fee": 0,
             }
 
+            # 首先从数据库获取基本信息
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT fund_name, fund_type, buy_fee FROM funds WHERE fund_code = ?",
+                (fund_code,),
+            )
+            fund_info = cursor.fetchone()
+
             # 如果数据库中有信息，优先使用
-            if fund_info and fund_info["fund_name"]:
-                result["name"] = fund_info["fund_name"]
-                if fund_info["fund_type"]:
-                    result["fund_type"] = fund_info["fund_type"]
-            # 如果数据库没有信息，使用fetch_fund_info获取
-            else:
+            if fund_info:
+                result["name"] = (
+                    fund_info["fund_name"] if fund_info["fund_name"] else ""
+                )
+                result["fund_type"] = (
+                    fund_info["fund_type"] if fund_info["fund_type"] else "未知"
+                )
+                result["buy_fee"] = (
+                    float(fund_info["buy_fee"])
+                    if fund_info["buy_fee"] is not None
+                    else 0
+                )
+
+            # 如果数据库中没有完整信息，从API获取
+            if not result["name"] or result["fund_type"] == "未知":
                 fund_basic_info = self.fetch_fund_info(fund_code)
                 if fund_basic_info:
-                    result["name"] = fund_basic_info.get("name", "")
+                    # 更新基金信息
+                    if not result["name"]:
+                        result["name"] = fund_basic_info["name"]
+                    if result["fund_type"] == "未知":
+                        result["fund_type"] = fund_basic_info["fund_type"]
+                    # 如果数据库中没有费率信息，使用API返回的费率
+                    if result["buy_fee"] == 0:
+                        result["buy_fee"] = fund_basic_info.get("buy_fee", 0)
 
-            # 设置净值信息
-            if nav_info:
-                result["nav"] = nav_info.get("nav", 0)
-                result["date"] = nav_info.get("date", "")
-                # 如果数据库中没有名称但API返回了名称
-                if not result["name"] and "name" in nav_info and nav_info["name"]:
-                    result["name"] = nav_info["name"]
+                    # 更新净值信息
+                    result["nav"] = fund_basic_info.get("unit_net_value", 0)
+                    result["update_time"] = fund_basic_info.get("net_value_date", "")
 
-            # 如果仍然没有基金类型，尝试获取
-            if result["fund_type"] == "未知":
-                fund_type = self.get_fund_type(fund_code)
-                if fund_type:
-                    result["fund_type"] = fund_type
-
-                    # 如果获取到了类型但数据库中没有，更新数据库
-                    if fund_info and not fund_info["fund_type"] and result["name"]:
-                        try:
-                            cursor.execute(
-                                "UPDATE funds SET fund_type = ? WHERE fund_code = ?",
-                                (fund_type, fund_code),
-                            )
-                            conn.commit()
-                        except Exception as e:
-                            print(f"更新基金类型失败: {str(e)}")
-                            conn.rollback()
-
-            conn.close()
             return result
+
         except Exception as e:
             print(f"获取基金信息失败: {str(e)}")
             # 确保返回基本结构，即使出错
@@ -905,8 +790,12 @@ class FundService:
                 "name": "",
                 "fund_type": "未知",
                 "nav": 0,
-                "date": "",
+                "update_time": "",
+                "buy_fee": 0,
             }
+        finally:
+            if conn:
+                conn.close()
 
     def get_all_fund_settings(self):
         """获取所有基金设置"""

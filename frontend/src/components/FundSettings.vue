@@ -10,7 +10,7 @@
           <el-table-column prop="fund_type" label="基金类型" min-width="150" align="center" />
           <el-table-column label="买入费率(%)" width="120" align="center">
             <template #default="scope">
-              {{ scope.row.buy_fee }}
+              {{ (scope.row.buy_fee * 100).toFixed(4) }}
             </template>
           </el-table-column>
           <el-table-column label="目标仓位 (%)" width="120" align="center">
@@ -116,12 +116,12 @@ export default {
         const response = await fundApi.getAllFundSettings();
         console.log('API Response:', response.data); // 调试输出
         if (response.data.status === 'success') {
-          // 转换费率为百分比，获取所有需要的字段
+          // 保持原始费率，不转换为百分比
           this.funds = response.data.data.map(fund => ({
             fund_code: fund.fund_code,
             fund_name: fund.fund_name,
             fund_type: fund.fund_type || '未知',
-            buy_fee: (fund.buy_fee * 100).toFixed(4),
+            buy_fee: fund.buy_fee,  // 不转换为百分比
             target_investment: fund.target_investment || 0,
           }));
         } else {
@@ -142,7 +142,7 @@ export default {
       if (!this.currentFund.fund_code) return
 
       try {
-        const response = await fundApi.getFundNav(this.currentFund.fund_code)
+        const response = await fundApi.getFundInfo(this.currentFund.fund_code)
         if (response.data.status === 'success') {
           this.currentFund.fund_name = response.data.data.name
           this.currentFund.fund_type = response.data.data.fund_type || '未知'
@@ -153,12 +153,12 @@ export default {
     },
     editFund(fund) {
       console.log('Editing fund with data:', fund); // 调试输出
-      this.isEditing = true
+      this.isEditing = true;
       this.currentFund = {
         fund_code: fund.fund_code,
         fund_name: fund.fund_name,
         fund_type: fund.fund_type || '',
-        buy_fee: parseFloat(fund.buy_fee),
+        buy_fee: parseFloat((fund.buy_fee * 100).toFixed(4)),  // 确保是数字类型
         target_investment: fund.target_investment || 0,
       };
     },
@@ -189,9 +189,10 @@ export default {
           return;
         }
 
+        // 确保费率是数字类型并正确转换回小数
         const fundData = {
           ...this.currentFund,
-          buy_fee: this.currentFund.buy_fee / 100
+          buy_fee: parseFloat((this.currentFund.buy_fee / 100).toFixed(6))  // 保留6位小数
         };
 
         const response = await fundApi.saveFundSettings(fundData);
@@ -221,31 +222,22 @@ export default {
       }
     },
     async handleFundCodeBlur() {
-      const fundCode = this.currentFund.fund_code.trim();
-      if (!fundCode) return;
-
-      // 检查基金代码格式
-      if (!/^\d{6}$/.test(fundCode)) {
-        this.$message.warning('请输入6位数字的基金代码');
-        return;
-      }
+      if (!this.currentFund.fund_code) return;
 
       this.loadingFundInfo = true;
       try {
-        const response = await fundApi.getFundNav(fundCode);
+        const response = await fundApi.getFundInfo(this.currentFund.fund_code);
         if (response.data.status === 'success') {
-          if (response.data.data.name) {
-            this.currentFund.fund_name = response.data.data.name;
-          } else {
-            this.$message.warning('未能获取到基金名称，请手动输入');
+          const fundInfo = response.data.data;
+          this.currentFund.fund_name = fundInfo.name;
+          this.currentFund.fund_type = fundInfo.fund_type || '未知';
+          // 将费率转换为百分比显示，并确保是数字类型
+          if (!this.isEditing) {  // 只在新增时自动设置费率
+            this.currentFund.buy_fee = parseFloat((fundInfo.buy_fee * 100).toFixed(4));
           }
-          this.currentFund.fund_type = response.data.data.fund_type || '未知';
-        } else {
-          this.$message.warning('未找到该基金信息，请确认基金代码是否正确');
         }
       } catch (error) {
-        console.error('获取基金信息失败:', error);
-        this.$message.error('获取基金信息失败: ' + (error.response?.data?.message || error.message || '未知错误'));
+        this.$message.error('获取基金信息失败');
       } finally {
         this.loadingFundInfo = false;
       }
