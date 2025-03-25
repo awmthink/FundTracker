@@ -144,15 +144,6 @@ export const fundApi = {
         }
     },
 
-    getFundFees: async (fundCode) => {
-        try {
-            return await axiosInstance.get(`/fund/settings/${fundCode}`);
-        } catch (error) {
-            console.error('获取基金费率失败:', error);
-            throw error;
-        }
-    },
-
     saveFundSettings: async (data) => {
         try {
             return await axiosInstance.post('/fund/settings', data);
