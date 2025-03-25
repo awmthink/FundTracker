@@ -70,17 +70,14 @@
 
     <div class="holdings-grid">
       <el-card v-for="holding in holdings" :key="holding.fund_code" class="holding-card"
-        :class="{ 'monetary-fund-card': holding.fund_type && holding.fund_type.includes('货币') }">
+        :class="{ 'monetary-fund-card': holding.fund_type && holding.fund_type.includes('货币') }"
+        @click="holding.isExpanded = !holding.isExpanded">
         <div class="holding-header">
           <div class="fund-info">
             <div class="fund-name">{{ holding.fund_name }}</div>
             <div class="fund-code">{{ holding.fund_code }}</div>
           </div>
-        </div>
-
-        <div class="holding-details">
-
-          <div class="detail-row">
+          <div class="holding-details">
             <div class="detail-item">
               <div class="label">持仓市值</div>
               <div class="value">¥ {{ formatCurrency(holding.market_value) }}</div>
@@ -91,14 +88,41 @@
                 ¥ {{ formatCurrency(holding.holding_profit) }}
               </div>
             </div>
-          </div>
-
-          <div class="detail-row">
             <div class="detail-item">
               <div class="label">持有收益率</div>
               <div class="value" :class="getProfitClass(holding.holding_profit_rate)">
                 {{ formatNumber(holding.holding_profit_rate * 100) }}%
               </div>
+            </div>
+            <div class="detail-item">
+              <div class="label">目标仓位</div>
+              <div class="value">{{ formatNumber(holding.target_investment || 0) }}%</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">当前仓位</div>
+              <div class="value">{{ formatNumber(holding.actualPosition) }}%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 展开的详细信息 -->
+        <div v-if="holding.isExpanded" class="expanded-details">
+          <div class="detail-row">
+            <div class="detail-item">
+              <div class="label">持有份额</div>
+              <div class="value">{{ formatCurrency(holding.total_shares) }}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">持仓成本</div>
+              <div class="value">¥ {{ formatCurrency(holding.cost_amount) }}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">平均持仓净值</div>
+              <div class="value">{{ formatNumber(holding.avg_cost_nav, 4) }}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">最新净值</div>
+              <div class="value">{{ formatNumber(holding.current_nav, 4) }}</div>
             </div>
             <div class="detail-item">
               <div class="label">累计收益</div>
@@ -107,56 +131,6 @@
               </div>
             </div>
           </div>
-
-          <div class="detail-row">
-            <div class="detail-item">
-              <div class="label">目标仓位</div>
-              <div class="value">{{ formatNumber(holding.target_investment || 0) }}%</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">当前仓位</div>
-              <div class="value">
-                {{ formatNumber(holding.actualPosition) }}%
-              </div>
-            </div>
-          </div>
-
-          <!-- 可折叠部分 -->
-          <el-collapse>
-            <el-collapse-item>
-              <template #title>
-                <div class="collapse-title">
-                  <span>更多详情</span>
-                </div>
-              </template>
-
-              <!-- 折叠内容 - 详细信息 -->
-
-              <div class="detail-row">
-                <div class="detail-item">
-                  <div class="label">持有份额</div>
-                  <div class="value">{{ formatCurrency(holding.total_shares) }}</div>
-                </div>
-
-                <div class="detail-item">
-                  <div class="label">持仓成本</div>
-                  <div class="value">¥ {{ formatCurrency(holding.cost_amount) }}</div>
-                </div>
-              </div>
-
-              <div class="detail-row">
-                <div class="detail-item">
-                  <div class="label">平均持仓净值</div>
-                  <div class="value">{{ formatNumber(holding.avg_cost_nav, 4) }}</div>
-                </div>
-                <div class="detail-item">
-                  <div class="label">最新净值</div>
-                  <div class="value">{{ formatNumber(holding.current_nav, 4) }}</div>
-                </div>
-              </div>
-
-            </el-collapse-item>
-          </el-collapse>
         </div>
       </el-card>
     </div>
@@ -219,10 +193,10 @@ export default {
             return {
               ...holding,
               updating: false,
+              isExpanded: false,
               actualPosition: this.totalMarketValue > 0
                 ? (holding.market_value / this.totalMarketValue * 100)
                 : 0,
-              // 如果是货币基金，显示剩余仓位
               target_investment: isMonetary
                 ? (100 - this.nonMonetaryPercentage)
                 : holding.target_investment
@@ -489,7 +463,7 @@ export default {
 
 .holdings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: 1fr;
   gap: 20px;
 }
 
@@ -497,6 +471,8 @@ export default {
   transition: all 0.3s;
   background-color: var(--card-bg);
   border-color: var(--border-color);
+  width: 100%;
+  cursor: pointer;
 }
 
 .holding-card:hover {
@@ -506,17 +482,21 @@ export default {
 
 .holding-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 0;
 }
 
 .fund-info {
-  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
 }
 
 .fund-name {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: bold;
   color: var(--text-color);
 }
@@ -524,36 +504,40 @@ export default {
 .fund-code {
   font-size: 14px;
   color: var(--text-color-secondary);
-  margin-top: 4px;
+  padding: 2px 8px;
+  background-color: var(--bg-color-light, rgba(0, 0, 0, 0.03));
+  border-radius: 4px;
+}
+
+.dark-theme .fund-code {
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .holding-details {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.detail-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 32px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
 }
 
 .detail-item {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 120px;
 }
 
 .label {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-color-secondary);
 }
 
 .value {
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-color);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .profit {
@@ -566,14 +550,27 @@ export default {
   /* 绿色，表示负收益 */
 }
 
-@media (max-width: 768px) {
-  .cards-row {
-    grid-template-columns: 1fr;
-    gap: 20px;
+@media (max-width: 1200px) {
+
+  .holding-details,
+  .detail-row {
+    gap: 24px;
   }
 
-  .asset-allocation-card {
-    margin-bottom: 0;
+  .detail-item {
+    min-width: calc(25% - 18px);
+  }
+}
+
+@media (max-width: 768px) {
+
+  .holding-details,
+  .detail-row {
+    gap: 16px;
+  }
+
+  .detail-item {
+    min-width: calc(50% - 8px);
   }
 }
 
@@ -632,58 +629,50 @@ export default {
   }
 }
 
-/* 折叠面板样式 - 完全重写 */
-:deep(.el-collapse) {
-  border: none !important;
+/* 展开的详细信息 */
+.expanded-details {
+  padding: 12px 16px 0;
+  border-top: 1px solid var(--border-color);
 }
 
-:deep(.el-collapse-item__header) {
-  border: none !important;
-  height: auto !important;
-  line-height: normal !important;
-  padding: 8px !important;
-  margin: 4px 0 !important;
-  border-radius: 4px !important;
-  color: var(--text-color-secondary) !important;
-  background-color: transparent !important;
-  transition: all 0.3s ease !important;
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
 }
 
-:deep(.el-collapse-item__content) {
-  padding-bottom: 0 !important;
+.detail-row .label {
+  font-size: 14px;
 }
 
-:deep(.el-collapse-item__wrap) {
-  border: none !important;
-  background-color: transparent !important;
+.detail-row .value {
+  font-size: 16px;
 }
 
-/* 亮色模式悬浮效果 */
-:deep(.el-collapse-item__header:hover) {
-  background-color: rgba(0, 0, 0, 0.05) !important;
+@media (max-width: 1200px) {
+
+  .holding-details,
+  .detail-row {
+    gap: 24px;
+  }
+
+  .detail-item {
+    min-width: calc(25% - 18px);
+  }
 }
 
-/* 暗色模式特定样式 */
-.dark-theme :deep(.el-collapse-item__header) {
-  background-color: rgba(30, 30, 30, 0.6) !important;
-}
+@media (max-width: 768px) {
 
-.dark-theme :deep(.el-collapse-item__header:hover) {
-  background-color: rgba(255, 255, 255, 0.2) !important;
-  transform: translateY(-1px) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5) !important;
-}
+  .holding-details,
+  .detail-row {
+    gap: 16px;
+  }
 
-/* 确保折叠标题在暗色模式下更加明显 */
-.dark-theme .collapse-title {
-  color: #e0e0e0 !important;
-  font-weight: 500 !important;
-}
-
-/* 确保箭头在暗色模式下可见 */
-.dark-theme :deep(.el-collapse-item__arrow) {
-  color: #e0e0e0 !important;
-  font-size: 16px !important;
+  .detail-item {
+    min-width: calc(50% - 8px);
+  }
 }
 
 /* 货币型基金卡片样式 */
