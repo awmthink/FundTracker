@@ -57,10 +57,16 @@ setup-frontend:
 	cd $(FRONTEND_DIR) && $(NPM) install
 
 # Start commands
-.PHONY: start start-backend start-frontend
+.PHONY: start start-backend start-frontend start-app
 start:
 	@echo "Please run 'make start-backend' and 'make start-frontend' in separate terminals"
-	@echo "Or use: 'make start-backend & make start-frontend' if you want to run both in background"
+	@echo "Or use: 'make start-app' to start both processes"
+
+start-app:
+	@echo "启动前端和后端服务..."
+	@cd $(BACKEND_DIR) && $(PYTHON) app.py > backend.log 2>&1 & \
+	cd $(FRONTEND_DIR) && $(NPM) run dev > frontend.log 2>&1 & \
+	wait
 
 start-backend:
 	@echo "Starting backend server on port 5001..."

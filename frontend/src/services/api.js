@@ -116,7 +116,9 @@ export const fundApi = {
                 transaction_type: data.transaction_type,
                 amount: parseFloat(data.amount),
                 nav: parseFloat(data.nav),
-                transaction_date: data.transaction_date
+                transaction_date: data.transaction_date,
+                fee: parseFloat(data.fee || 0),
+                shares: parseFloat(data.shares || 0)
             };
             return await axiosInstance.put(`/fund/transactions/${transactionId}`, updateData);
         } catch (error) {

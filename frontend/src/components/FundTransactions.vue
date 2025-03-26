@@ -14,12 +14,7 @@
     </div>
 
     <!-- 搜索表单 -->
-    <el-form 
-      v-show="quickDateRange === 'custom'" 
-      :inline="true" 
-      :model="filters" 
-      class="search-form"
-    >
+    <el-form v-show="quickDateRange === 'custom'" :inline="true" :model="filters" class="search-form">
       <el-form-item label="基金代码">
         <el-input v-model="filters.fund_code" placeholder="请输入基金代码" />
       </el-form-item>
@@ -27,26 +22,15 @@
         <el-input v-model="filters.fund_name" placeholder="请输入基金名称" />
       </el-form-item>
       <el-form-item label="交易类型">
-        <el-select 
-          v-model="filters.transaction_type" 
-          placeholder="请选择"
-          style="width: 180px"
-        >
+        <el-select v-model="filters.transaction_type" placeholder="请选择" style="width: 180px">
           <el-option label="全部" value="all" />
           <el-option label="买入" value="buy" />
           <el-option label="卖出" value="sell" />
         </el-select>
       </el-form-item>
       <el-form-item label="交易日期">
-        <el-date-picker
-          v-model="dateRange"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-          format="YYYY-MM-DD"
-          value-format="YYYY-MM-DD"
-        />
+        <el-date-picker v-model="dateRange" type="daterange" range-separator="至" start-placeholder="开始日期"
+          end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="searchTransactions">查询</el-button>
@@ -55,11 +39,8 @@
     </el-form>
 
     <!-- 交易记录表格 -->
-    <el-table
-      :data="transactions"
-      style="width: 100%"
-      :header-cell-style="{ background: 'var(--card-bg)', color: 'var(--text-color)' }"
-    >
+    <el-table :data="transactions" style="width: 100%"
+      :header-cell-style="{ background: 'var(--card-bg)', color: 'var(--text-color)' }">
       <el-table-column prop="fund_code" label="基金代码" width="100" />
       <el-table-column prop="fund_name" label="基金名称" width="200" />
       <el-table-column prop="transaction_type" label="交易类型" width="100">
@@ -90,18 +71,10 @@
       <el-table-column prop="transaction_date" label="交易日期" width="120" />
       <el-table-column label="操作" width="200">
         <template #default="scope">
-          <el-button
-            size="small"
-            type="primary"
-            @click="handleEdit(scope.row)"
-          >
+          <el-button size="small" type="primary" @click="handleEdit(scope.row)">
             编辑
           </el-button>
-          <el-button
-            size="small"
-            type="danger"
-            @click="handleDelete(scope.row)"
-          >
+          <el-button size="small" type="danger" @click="handleDelete(scope.row)">
             删除
           </el-button>
         </template>
@@ -109,12 +82,7 @@
     </el-table>
 
     <!-- 添加编辑对话框 -->
-    <el-dialog
-      title="编辑交易记录"
-      v-model="editDialogVisible"
-      width="500px"
-      :close-on-click-modal="false"
-    >
+    <el-dialog title="编辑交易记录" v-model="editDialogVisible" width="500px" :close-on-click-modal="false">
       <el-form :model="editForm" label-width="100px">
         <el-form-item label="基金代码">
           <el-input v-model="editForm.fund_code" disabled />
@@ -128,30 +96,37 @@
             <el-option label="卖出" value="sell" />
           </el-select>
         </el-form-item>
-        <el-form-item label="交易金额">
-          <el-input-number 
-            v-model="editForm.amount" 
-            :precision="2" 
-            :step="100"
-            :min="0"
-          />
+        <el-form-item v-if="editForm.transaction_type === 'buy'" label="交易金额">
+          <el-input-number v-model="editForm.amount" :precision="2" :step="100" :min="0"
+            @change="calculateBuyTransaction" />
+        </el-form-item>
+        <el-form-item v-if="editForm.transaction_type === 'sell'" label="赎回份额">
+          <el-input-number v-model="editForm.shares" :precision="2" :step="0.01" :min="0"
+            @change="calculateSellTransaction" />
         </el-form-item>
         <el-form-item label="净值">
-          <el-input-number 
-            v-model="editForm.nav" 
-            :precision="4" 
-            :step="0.0001"
-            :min="0"
-          />
+          <el-input-number v-model="editForm.nav" :precision="4" :step="0.0001" :min="0" :controls="false" disabled />
+        </el-form-item>
+        <el-form-item v-if="editForm.transaction_type === 'buy'" label="手续费">
+          <el-input-number v-model="editForm.fee" :precision="2" :step="0.01" :min="0" :controls="false" disabled />
+        </el-form-item>
+        <el-form-item v-if="editForm.transaction_type === 'sell'" label="手续费">
+          <el-input-number v-model="editForm.fee" :precision="2" :step="0.01" :min="0"
+            @change="calculateSellTransaction" />
+        </el-form-item>
+        <el-form-item v-if="editForm.transaction_type === 'buy'" label="份额">
+          <el-input-number v-model="editForm.shares" :precision="2" :step="0.01" :min="0" :controls="false" disabled />
+        </el-form-item>
+        <el-form-item v-if="editForm.transaction_type === 'sell'" label="交易金额">
+          <el-input-number v-model="editForm.amount" :precision="2" :step="100" :min="0" :controls="false" disabled />
+        </el-form-item>
+        <el-form-item v-if="editForm.transaction_type === 'sell'" label="到账金额">
+          <el-input-number v-model="editForm.final_amount" :precision="2" :step="100" :min="0" :controls="false"
+            disabled />
         </el-form-item>
         <el-form-item label="交易日期">
-          <el-date-picker
-            v-model="editForm.transaction_date"
-            type="date"
-            placeholder="选择日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
-          />
+          <el-date-picker v-model="editForm.transaction_date" type="date" placeholder="选择日期" format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD" @change="handleTransactionDateChange" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -190,7 +165,10 @@ export default {
         transaction_type: '',
         amount: 0,
         nav: 0,
-        transaction_date: ''
+        transaction_date: '',
+        fee: 0,
+        shares: 0,
+        final_amount: 0
       },
       quickDateRange: '1', // Default to 1 month
     }
@@ -199,7 +177,7 @@ export default {
     async loadTransactions() {
       try {
         let filters = {}
-        
+
         if (this.quickDateRange === 'custom') {
           // 自定义模式：使用所有筛选条件
           filters = { ...this.filters }
@@ -216,7 +194,7 @@ export default {
             }
           }
         }
-        
+
         const response = await fundApi.getTransactions(filters)
         if (response.data.status === 'success') {
           this.transactions = response.data.data
@@ -225,11 +203,11 @@ export default {
         ElMessage.error('加载交易记录失败')
       }
     },
-    
+
     searchTransactions() {
       this.loadTransactions()
     },
-    
+
     resetFilters() {
       this.filters = {
         fund_code: '',
@@ -242,7 +220,7 @@ export default {
       this.quickDateRange = '1'
       this.handleQuickDateChange('1') // 重置为最近1个月的数据
     },
-    
+
     handleEdit(transaction) {
       this.editForm = {
         transaction_id: transaction.transaction_id,
@@ -251,18 +229,36 @@ export default {
         transaction_type: transaction.transaction_type,
         amount: transaction.amount,
         nav: transaction.nav,
-        transaction_date: transaction.transaction_date
+        transaction_date: transaction.transaction_date,
+        fee: transaction.fee,
+        shares: transaction.shares,
+        final_amount: transaction.amount - transaction.fee
       }
       this.editDialogVisible = true
     },
-    
+
     async handleUpdate() {
       try {
+        // 如果是买入交易，重新计算份额
+        if (this.editForm.transaction_type === 'buy') {
+          const response = await fundApi.getAllFundSettings()
+          if (response.data.status === 'success') {
+            const fundSettings = response.data.data
+            const fundSetting = fundSettings.find(f => f.fund_code === this.editForm.fund_code)
+            if (fundSetting) {
+              // 计算手续费
+              this.editForm.fee = this.editForm.amount * fundSetting.buy_fee
+              // 计算份额
+              this.editForm.shares = (this.editForm.amount - this.editForm.fee) / this.editForm.nav
+            }
+          }
+        }
+
         const response = await fundApi.updateTransaction(
           this.editForm.transaction_id,
           this.editForm
         )
-        
+
         if (response.data.status === 'success') {
           ElMessage.success('更新成功')
           this.editDialogVisible = false
@@ -273,7 +269,7 @@ export default {
         ElMessage.error('更新失败')
       }
     },
-    
+
     async handleDelete(transaction) {
       try {
         await ElMessageBox.confirm(
@@ -285,7 +281,7 @@ export default {
             type: 'warning',
           }
         )
-        
+
         const response = await fundApi.deleteTransaction(transaction.transaction_id)
         if (response.data.status === 'success') {
           ElMessage.success('删除成功')
@@ -298,28 +294,99 @@ export default {
         }
       }
     },
-    
+
     formatNumber(num, decimals = 2) {
       if (num === null || num === undefined) return '--'
       return Number(num).toFixed(decimals)
     },
+
+    async handleTransactionDateChange() {
+      if (!this.editForm.fund_code || !this.editForm.transaction_date) return
+
+      try {
+        // 检查是否为当天交易
+        const today = new Date().toISOString().split('T')[0]
+        if (this.editForm.transaction_date === today) {
+          ElMessage.warning('不支持编辑当天的交易记录，因为净值数据可能不准确')
+          return
+        }
+
+        // 获取历史净值
+        const response = await fundApi.getHistoricalNav(
+          this.editForm.fund_code,
+          this.editForm.transaction_date
+        )
+
+        if (response.data.status === 'success') {
+          this.editForm.nav = response.data.data.nav
+          // 如果是卖出交易，重新计算金额
+          if (this.editForm.transaction_type === 'sell') {
+            this.calculateSellTransaction()
+          } else {
+            this.calculateBuyTransaction()
+          }
+        }
+      } catch (error) {
+        ElMessage.error('获取历史净值失败')
+      }
+    },
+
+    async calculateBuyTransaction() {
+      if (this.editForm.transaction_type !== 'buy' || !this.editForm.amount || !this.editForm.nav) return
+
+      try {
+        const response = await fundApi.getAllFundSettings()
+        if (response.data.status === 'success') {
+          const fundSettings = response.data.data
+          const fundSetting = fundSettings.find(f => f.fund_code === this.editForm.fund_code)
+          if (fundSetting) {
+            // 计算手续费
+            this.editForm.fee = this.editForm.amount * fundSetting.buy_fee
+            // 计算份额
+            this.editForm.shares = (this.editForm.amount - this.editForm.fee) / this.editForm.nav
+            // 四舍五入到2位小数
+            this.editForm.shares = Math.round(this.editForm.shares * 100) / 100
+          }
+        }
+      } catch (error) {
+        console.error('计算买入交易失败:', error)
+      }
+    },
+
+    async calculateSellTransaction() {
+      if (this.editForm.transaction_type !== 'sell' || !this.editForm.shares || !this.editForm.nav) return
+
+      try {
+        // 计算交易金额（份额 * 净值）
+        this.editForm.amount = this.editForm.shares * this.editForm.nav
+        // 四舍五入到2位小数
+        this.editForm.amount = Math.round(this.editForm.amount * 100) / 100
+        // 计算到账金额（交易金额 - 手续费）
+        this.editForm.final_amount = this.editForm.amount - (this.editForm.fee || 0)
+        // 四舍五入到2位小数
+        this.editForm.final_amount = Math.round(this.editForm.final_amount * 100) / 100
+      } catch (error) {
+        console.error('计算卖出交易失败:', error)
+      }
+    },
+
     handleQuickDateChange(value) {
       if (value === 'custom') {
         // 切换到自定义模式时，保持当前日期范围
         return;
       }
-      
+
       // 快捷查询模式：重置其他筛选条件，只设置日期
       const months = parseInt(value);
       const endDate = new Date();
       const startDate = new Date();
       startDate.setMonth(endDate.getMonth() - months);
-      
+
       this.dateRange = [
         startDate.toISOString().split('T')[0],
         endDate.toISOString().split('T')[0]
       ];
-      
+
       // 清空其他筛选条件
       if (value !== 'custom') {
         this.filters = {
@@ -330,7 +397,7 @@ export default {
           end_date: ''
         }
       }
-      
+
       this.loadTransactions();
     },
   },
@@ -459,15 +526,18 @@ export default {
 }
 
 .el-date-picker {
-  width: 240px !important;  /* 日期选择器需要更宽一些 */
+  width: 240px !important;
+  /* 日期选择器需要更宽一些 */
 }
 
 /* 修改收益颜色样式 */
 :deep(.profit) {
-  color: #F56C6C !important;  /* 红色，表示正收益 */
+  color: #F56C6C !important;
+  /* 红色，表示正收益 */
 }
 
 :deep(.loss) {
-  color: #67C23A !important;  /* 绿色，表示负收益 */
+  color: #67C23A !important;
+  /* 绿色，表示负收益 */
 }
-</style> 
+</style>

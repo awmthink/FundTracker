@@ -309,11 +309,23 @@ class FundService:
                             if total_market_value > 0
                             else 0
                         ),  # 实际仓位百分比
+                        "daily_growth_rate": 0,  # 货币基金日涨幅为0
                     }
                 else:
                     # 非货币型基金正常计算
                     # 获取最新净值，优先使用前一天的净值
                     current_nav = fund_data["current_nav"]
+
+                    # 获取昨天的历史净值用于计算日涨幅
+                    yesterday = (datetime.now() - timedelta(days=1)).strftime(
+                        "%Y-%m-%d"
+                    )
+                    yesterday_nav = self.get_historical_nav(fund_code, yesterday)
+                    daily_growth_rate = None
+                    if yesterday_nav and current_nav:
+                        daily_growth_rate = (
+                            current_nav - yesterday_nav
+                        ) / yesterday_nav
 
                     market_value = total_shares * current_nav
                     avg_cost_nav = total_cost / total_shares if total_shares > 0 else 0
@@ -363,6 +375,7 @@ class FundService:
                             if total_market_value > 0
                             else 0
                         ),  # 实际仓位百分比
+                        "daily_growth_rate": daily_growth_rate,  # 添加日涨幅字段
                     }
 
                 # 只添加有持仓的基金
@@ -671,13 +684,22 @@ class FundService:
             if data["transaction_type"] == "sell":
                 fee = float(data.get("fee", 0))  # 使用用户输入的手续费
             else:
-                fund_settings = self.get_fund_fees(data["fund_code"])
-                if not fund_settings:
+                # 获取基金费率设置
+                fund_settings = self.get_all_fund_settings()
+                fund_setting = next(
+                    (f for f in fund_settings if f["fund_code"] == data["fund_code"]),
+                    None,
+                )
+                if not fund_setting:
                     raise ValueError("未找到基金费率设置")
-                fee = amount * fund_settings["buy_fee"]
+                fee = amount * fund_setting["buy_fee"]
 
             # 计算份额
-            shares = amount / nav
+            shares = (
+                amount / nav
+                if data["transaction_type"] == "buy"
+                else float(data.get("shares", 0))
+            )
 
             # 更新交易记录 - 注意这里不再使用 fund_id
             cursor.execute(

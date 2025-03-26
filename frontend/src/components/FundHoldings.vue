@@ -74,8 +74,15 @@
         @click="holding.isExpanded = !holding.isExpanded">
         <div class="holding-header">
           <div class="fund-info">
-            <div class="fund-name">{{ holding.fund_name }}</div>
-            <div class="fund-code">{{ holding.fund_code }}</div>
+            <div class="fund-basic-info">
+              <div class="fund-title">
+                <div class="fund-name">{{ holding.fund_name }}</div>
+                <div class="fund-code">{{ holding.fund_code }}</div>
+              </div>
+            </div>
+            <div class="daily-growth" :class="getProfitClass(holding.daily_growth_rate)">
+              {{ formatRateValue(holding.daily_growth_rate) }}
+            </div>
           </div>
           <div class="holding-details">
             <div class="detail-item">
@@ -248,7 +255,8 @@ export default {
 
     formatRateValue(rate) {
       if (rate === null || rate === undefined) return '--'
-      return `${(rate * 100).toFixed(2)}%`
+      const formattedRate = (rate * 100).toFixed(2)
+      return formattedRate > 0 ? `+${formattedRate}%` : `${formattedRate}%`
     },
 
     formatNumber(num, decimals = 2) {
@@ -490,9 +498,22 @@ export default {
 .fund-info {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--border-color);
   padding-bottom: 8px;
+}
+
+.fund-basic-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fund-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .fund-name {
@@ -507,6 +528,26 @@ export default {
   padding: 2px 8px;
   background-color: var(--bg-color-light, rgba(0, 0, 0, 0.03));
   border-radius: 4px;
+}
+
+.daily-growth {
+  font-size: 18px;
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 4px;
+  min-width: 80px;
+  text-align: center;
+  background-color: var(--bg-color-light);
+}
+
+.daily-growth.profit {
+  color: #fff;
+  background-color: #F56C6C;
+}
+
+.daily-growth.loss {
+  color: #fff;
+  background-color: #67C23A;
 }
 
 .dark-theme .fund-code {
@@ -632,6 +673,10 @@ export default {
 /* 展开的详细信息 */
 .expanded-details {
   padding: 12px 16px 0;
+}
+
+.expanded-details .detail-row {
+  padding: 16px 0 0;
   border-top: 1px solid var(--border-color);
 }
 
