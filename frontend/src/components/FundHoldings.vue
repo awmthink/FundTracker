@@ -80,6 +80,22 @@
                 <div class="fund-code">{{ holding.fund_code }}</div>
               </div>
             </div>
+
+            <div class="position-progress">
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{
+                  width: `${Math.min(100, (holding.actualPosition / (holding.target_investment || 100)) * 100)}%`,
+                  backgroundColor: getProgressColor(holding.actualPosition / (holding.target_investment || 100) * 100)
+                }">
+                </div>
+                <span class="progress-text">
+                  {{ formatNumber(holding.actualPosition) }}% / {{ formatNumber(holding.target_investment || 100) }}%
+                  <span class="position-status">{{ getPositionStatus(holding.actualPosition / (holding.target_investment
+                    || 100) * 100) }}</span>
+                </span>
+              </div>
+            </div>
+
             <div class="daily-growth" :class="getProfitClass(holding.daily_growth_rate)">
               {{ formatRateValue(holding.daily_growth_rate) }}
             </div>
@@ -101,13 +117,16 @@
                 {{ formatNumber(holding.holding_profit_rate * 100) }}%
               </div>
             </div>
+
             <div class="detail-item">
-              <div class="label">目标仓位</div>
-              <div class="value">{{ formatNumber(holding.target_investment || 0) }}%</div>
+              <div class="label">持仓成本</div>
+              <div class="value">¥ {{ formatCurrency(holding.cost_amount) }}</div>
             </div>
             <div class="detail-item">
-              <div class="label">当前仓位</div>
-              <div class="value">{{ formatNumber(holding.actualPosition) }}%</div>
+              <div class="label">累计收益</div>
+              <div class="value" :class="getProfitClass(holding.total_profit)">
+                ¥ {{ formatCurrency(holding.total_profit) }}
+              </div>
             </div>
           </div>
         </div>
@@ -286,10 +305,19 @@ export default {
     },
 
     getProgressColor(percentage) {
-      if (percentage < 30) return '#909399'  // 灰色
-      if (percentage < 70) return '#409EFF'  // 蓝色
-      if (percentage < 90) return '#E6A23C'  // 橙色
-      return '#67C23A'  // 绿色
+      if (percentage < 5) return '#FFFFFF'  // 空仓 - 白色
+      if (percentage < 30) return '#67C23A'  // 轻仓 - 绿色
+      if (percentage < 70) return '#409EFF'  // 中性 - 蓝色
+      if (percentage < 95) return '#E6A23C'  // 重仓 - 橙色
+      return '#F56C6C'  // 满仓 - 红色
+    },
+
+    getPositionStatus(percentage) {
+      if (percentage < 5) return '空仓'
+      if (percentage < 30) return '轻仓'
+      if (percentage < 70) return '中性'
+      if (percentage < 95) return '重仓'
+      return '满仓'
     }
   },
   mounted() {
@@ -530,6 +558,83 @@ export default {
   border-radius: 4px;
 }
 
+.position-progress {
+  display: flex;
+  width: 500px;
+  /* 固定宽度 */
+  margin-left: auto;
+  /* 右对齐 */
+  margin-right: 20px;
+  /* 与日涨跌保持间距 */
+}
+
+.progress-bar {
+  height: 18px;
+  /* 增加高度使其更醒目 */
+  background-color: var(--bg-color-light, rgba(0, 0, 0, 0.03));
+  border-radius: 6px;
+  overflow: hidden;
+  width: 100%;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  /* 添加边框以区分空仓状态 */
+}
+
+.progress-text {
+  position: absolute;
+  width: 100%;
+  text-align: center;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+  z-index: 2;
+  text-shadow:
+    -1px -1px 0 rgba(255, 255, 255, 0.7),
+    1px -1px 0 rgba(255, 255, 255, 0.7),
+    -1px 1px 0 rgba(255, 255, 255, 0.7),
+    1px 1px 0 rgba(255, 255, 255, 0.7);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.position-status {
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .position-status {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-theme .progress-text {
+  color: #fff;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.7),
+    1px -1px 0 rgba(0, 0, 0, 0.7),
+    -1px 1px 0 rgba(0, 0, 0, 0.7),
+    1px 1px 0 rgba(0, 0, 0, 0.7);
+}
+
+/* 暗色模式适配 */
+.dark-theme .progress-bar {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
 .daily-growth {
   font-size: 18px;
   font-weight: bold;
@@ -592,6 +697,10 @@ export default {
 }
 
 @media (max-width: 1200px) {
+  .position-progress {
+    width: 250px;
+    /* 在较小屏幕上稍微减小宽度 */
+  }
 
   .holding-details,
   .detail-row {
@@ -604,6 +713,16 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .fund-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .position-progress {
+    width: 100%;
+    /* 在移动端采用全宽 */
+    margin: 12px 0;
+  }
 
   .holding-details,
   .detail-row {
