@@ -13,11 +13,6 @@
               {{ (scope.row.buy_fee * 100).toFixed(4) }}
             </template>
           </el-table-column>
-          <el-table-column label="目标仓位 (%)" width="120" align="center">
-            <template #default="scope">
-              {{ formatNumber(scope.row.target_investment) }}
-            </template>
-          </el-table-column>
           <el-table-column label="操作" width="150" align="center">
             <template #default="scope">
               <el-button size="small" type="primary" @click="editFund(scope.row)">
@@ -56,11 +51,6 @@
             <el-input-number v-model="currentFund.buy_fee" :precision="4" :step="0.0001" :min="0" :max="5"
               style="width: 180px" />
           </el-form-item>
-
-          <el-form-item label="目标仓位 (%)" prop="target_investment">
-            <el-input-number v-model="currentFund.target_investment" :precision="2" :step="1" :min="0" :max="100"
-              style="width: 180px" />
-          </el-form-item>
         </el-form>
 
         <div class="dialog-footer" style="text-align: center; margin-top: 20px;">
@@ -86,7 +76,6 @@ export default {
         fund_name: '',
         fund_type: '',
         buy_fee: 0,
-        target_investment: 0,
       },
       isEditing: false,
       rules: {
@@ -99,10 +88,6 @@ export default {
         ],
         buy_fee: [
           { required: true, message: '请输入买入费率', trigger: 'blur' }
-        ],
-        target_investment: [
-          { required: true, message: '请输入目标仓位百分比', trigger: 'blur' },
-          { type: 'number', min: 0, max: 100, message: '目标仓位必须在0-100之间', trigger: 'blur' }
         ],
       },
       loading: false,
@@ -122,7 +107,6 @@ export default {
             fund_name: fund.fund_name,
             fund_type: fund.fund_type || '未知',
             buy_fee: fund.buy_fee,  // 不转换为百分比
-            target_investment: fund.target_investment || 0,
           }));
         } else {
           throw new Error(response.data.message || '未知错误');
@@ -159,7 +143,6 @@ export default {
         fund_name: fund.fund_name,
         fund_type: fund.fund_type || '',
         buy_fee: parseFloat((fund.buy_fee * 100).toFixed(4)),  // 确保是数字类型
-        target_investment: fund.target_investment || 0,
       };
     },
     async handleDelete(fund) {
@@ -215,7 +198,6 @@ export default {
         fund_name: '',
         fund_type: '',
         buy_fee: 0,
-        target_investment: 0,
       };
       if (this.$refs.fundForm) {
         this.$refs.fundForm.resetFields();

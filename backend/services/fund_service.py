@@ -170,7 +170,7 @@ class FundService:
 
             # 构建查询语句，添加截止日期条件
             query = """
-                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time, f.target_investment,
+                SELECT f.fund_code, f.fund_name, f.current_nav, f.fund_type, f.last_update_time,
                        t.transaction_type, t.amount, t.nav, t.shares, t.transaction_date
                 FROM funds f
                 INNER JOIN fund_transactions t ON f.fund_code = t.fund_code
@@ -192,7 +192,6 @@ class FundService:
                         "current_nav": row["current_nav"] or 0,
                         "last_update_time": row["last_update_time"],
                         "fund_type": row["fund_type"] or "未知",
-                        "target_investment": row["target_investment"] or 0,
                         "transactions": [],
                     }
 
@@ -301,9 +300,6 @@ class FundService:
                         "last_sell_date": last_sell_date,
                         "since_last_buy_rate": 0,  # 货币基金涨幅为0
                         "since_last_sell_rate": 0,  # 货币基金涨幅为0
-                        "target_investment": fund_data[
-                            "target_investment"
-                        ],  # 目标仓位百分比
                         "actual_position": (
                             (market_value / total_market_value * 100)
                             if total_market_value > 0
@@ -367,9 +363,6 @@ class FundService:
                         "last_sell_date": last_sell_date,
                         "since_last_buy_rate": since_last_buy_rate,
                         "since_last_sell_rate": since_last_sell_rate,
-                        "target_investment": fund_data[
-                            "target_investment"
-                        ],  # 目标仓位百分比
                         "actual_position": (
                             (market_value / total_market_value * 100)
                             if total_market_value > 0
@@ -430,7 +423,7 @@ class FundService:
                 cursor.execute(
                     """
                     UPDATE funds 
-                    SET fund_name = ?, buy_fee = ?, fund_type = ?, target_investment = ?, 
+                    SET fund_name = ?, buy_fee = ?, fund_type = ?, 
                         updated_at = CURRENT_TIMESTAMP
                     WHERE fund_code = ?
                 """,
@@ -438,7 +431,6 @@ class FundService:
                         data["fund_name"],
                         data["buy_fee"],
                         data["fund_type"],
-                        data.get("target_investment", 0),
                         data["fund_code"],
                     ),
                 )
@@ -446,15 +438,14 @@ class FundService:
                 # 插入新基金
                 cursor.execute(
                     """
-                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type, target_investment)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO funds (fund_code, fund_name, buy_fee, fund_type)
+                    VALUES (?, ?, ?, ?)
                 """,
                     (
                         data["fund_code"],
                         data["fund_name"],
                         data["buy_fee"],
                         data["fund_type"],
-                        data.get("target_investment", 0),
                     ),
                 )
 
@@ -820,13 +811,12 @@ class FundService:
                 conn.close()
 
     def get_all_fund_settings(self):
-        """获取所有基金设置"""
         conn = self.get_db_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT fund_code, fund_name, buy_fee, fund_type, target_investment
+                SELECT fund_code, fund_name, buy_fee, fund_type
                 FROM funds
                 ORDER BY fund_code
             """
@@ -838,11 +828,6 @@ class FundService:
                     "fund_name": row["fund_name"],
                     "buy_fee": float(row["buy_fee"]),
                     "fund_type": row["fund_type"],
-                    "target_investment": (
-                        float(row["target_investment"])
-                        if row["target_investment"] is not None
-                        else 0
-                    ),
                 }
                 for row in settings
             ]

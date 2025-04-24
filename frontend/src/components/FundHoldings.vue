@@ -84,14 +84,13 @@
             <div class="position-progress">
               <div class="progress-bar">
                 <div class="progress-fill" :style="{
-                  width: `${Math.min(100, (holding.actualPosition / (holding.target_investment || 100)) * 100)}%`,
-                  backgroundColor: getProgressColor(holding.actualPosition / (holding.target_investment || 100) * 100)
+                  width: `${Math.min(100, holding.actualPosition)}%`,
+                  backgroundColor: getProgressColor(holding.actualPosition)
                 }">
                 </div>
                 <span class="progress-text">
-                  {{ formatNumber(holding.actualPosition) }}% / {{ formatNumber(holding.target_investment || 100) }}%
-                  <span class="position-status">{{ getPositionStatus(holding.actualPosition / (holding.target_investment
-                    || 100) * 100) }}</span>
+                  {{ formatNumber(holding.actualPosition) }}%
+                  <span class="position-status">{{ getPositionStatus(holding.actualPosition) }}</span>
                 </span>
               </div>
             </div>
@@ -215,17 +214,13 @@ export default {
 
           // 更新每个基金的实际仓位
           this.holdings = response.data.data.map(holding => {
-            const isMonetary = holding.fund_type && holding.fund_type.includes('货币')
             return {
               ...holding,
               updating: false,
               isExpanded: false,
               actualPosition: this.totalMarketValue > 0
                 ? (holding.market_value / this.totalMarketValue * 100)
-                : 0,
-              target_investment: isMonetary
-                ? (100 - this.nonMonetaryPercentage)
-                : holding.target_investment
+                : 0
             }
           }).sort((a, b) => b.market_value - a.market_value)
 
@@ -305,19 +300,17 @@ export default {
     },
 
     getProgressColor(percentage) {
-      if (percentage < 5) return '#FFFFFF'  // 空仓 - 白色
-      if (percentage < 30) return '#67C23A'  // 轻仓 - 绿色
-      if (percentage < 70) return '#409EFF'  // 中性 - 蓝色
-      if (percentage < 95) return '#E6A23C'  // 重仓 - 橙色
-      return '#F56C6C'  // 满仓 - 红色
+      if (percentage < 1) return '#FFFFFF'  // 空仓 - 白色
+      if (percentage < 10) return '#67C23A'  // 轻仓 - 绿色
+      if (percentage < 30) return '#409EFF'  // 中性 - 蓝色
+      return '#F56C6C'  // 重仓 - 红色
     },
 
     getPositionStatus(percentage) {
-      if (percentage < 5) return '空仓'
-      if (percentage < 30) return '轻仓'
-      if (percentage < 70) return '中性'
-      if (percentage < 95) return '重仓'
-      return '满仓'
+      if (percentage < 1) return '空仓'
+      if (percentage < 10) return '轻仓'
+      if (percentage < 30) return '中性'
+      return '重仓'
     }
   },
   mounted() {

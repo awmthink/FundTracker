@@ -31,9 +31,9 @@ def import_csv_to_db(funds_file=None, transactions_file=None):
                             """
                             INSERT OR REPLACE INTO funds (
                                 fund_code, fund_name, current_nav, last_update_time,
-                                buy_fee, fund_type, target_investment,
+                                buy_fee, fund_type,
                                 created_at, updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                             (
                                 row["fund_code"],
@@ -42,11 +42,6 @@ def import_csv_to_db(funds_file=None, transactions_file=None):
                                 row["last_update_time"],
                                 float(row["buy_fee"]) if row["buy_fee"] else 0,
                                 row.get("fund_type", ""),
-                                (
-                                    float(row.get("target_investment", 0))
-                                    if row.get("target_investment")
-                                    else 0
-                                ),
                                 row.get(
                                     "created_at",
                                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
